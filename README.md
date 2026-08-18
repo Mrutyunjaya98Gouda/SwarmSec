@@ -33,28 +33,47 @@ fully covers.
 ## How it works
 
 +--------------------------------------------------------------------+
-| SWARMSEC NETWORK |
-| |
-| +------------+ +------------+ +------------+ |
-| | Node A | | Node B | | Node C | |
-| | |<---->| |<---->| | |
-| | pseudonym | | pseudonym | | pseudonym | |
-| | keypair | | keypair | | keypair | |
-| | (Ed25519) | | (Ed25519) | | (Ed25519) | |
-| | | | | | | |
-| | gossip | GossipSub / libp2p, no chain in this path |
-| | | | | | | |
-| | 3-model | | 3-model | | 3-model | |
-| | LOCAL trust| | LOCAL trust| | LOCAL trust| |
-| | scorer | | scorer | | scorer | |
-| +------------+ +------------+ +------------+ |
+|                          SWARMSEC NETWORK                          |
+|                                                                    |
+|   +------------+      +------------+      +------------+           |
+|   |   Node A   |      |   Node B   |      |   Node C   |           |
+|   |            |<---->|            |<---->|            |           |
+|   | pseudonym  |      | pseudonym  |      | pseudonym  |           |
+|   | keypair    |      | keypair    |      | keypair    |           |
+|   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |           |
+|   |            |      |            |      |            |           |
+|   | gossip     | GossipSub / libp2p, no chain in this path         |
+|   |            |      |            |      |            |           |
+|   | 3-model    |      | 3-model    |      | 3-model    |           |
+|   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|           |
+|   | scorer     |      | scorer     |      | scorer     |           |
+|   | (randomized|      | (randomized|      | (randomized|           |
+|   |  params —  |      |  params —  |      |  params —  |           |
+|   |  no two    |      |  no two    |      |  no two    |           |
+|   |  nodes must|      |  nodes must|      |  nodes must|           |
+|   |  agree)    |      |  agree)    |      |  agree)    |           |
+|   +------------+      +------------+      +------------+           |
 +--------------------------------------------------------------------+
-|
-rare: one-time registration + periodic transparency log
-v
-+----------------------------------------------------------------+
-| REGISTRAR CONSTELLATION(S) (consumers pick which to trust) |
-+----------------------------------------------------------------+
+                              |
+       rare: one-time registration + periodic transparency log
+                              v
+   +----------------------------------------------------------------+
+   |     REGISTRAR CONSTELLATION(S)  (consumers pick which to trust)|
+   |  - internal 2-of-3 threshold signing per registrar (HSM-backed)|
+   |  - vets an org's real-world legitimacy ONCE                    |
+   |  - blind-signs that org's chosen pseudonym key                 |
+   |  - EVERY issued credential published to a public, append-only, |
+   |    hash-chained transparency log — misissuance is mechanically |
+   |    detectable by anyone, not adjudicated by a governance vote  |
+   +----------------------------------------------------------------+
+                              |
+                    (Phase 3, optional)
+                              v 
+   +----------------------------------------------------------------+
+   |     CHECKPOINT ANCHOR  (tiny contract, cheap L2)               |
+   |     stores only: date + log root + registrar signatures        |
+   |     no staking. no slashing. no per-IoC voting.                |
+   +----------------------------------------------------------------+
 
 
 
