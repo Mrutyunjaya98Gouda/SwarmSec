@@ -131,19 +131,16 @@ async def publish_local(req: PublishRequest):
 @app.get("/query")
 def query_indicator(pattern: str):
     """Query the local node for an indicator."""
+    from swarmsec.node.scoring import compute_corroboration_score
+    
     if pattern not in _INDICATORS:
         raise HTTPException(status_code=404, detail="Indicator not found")
         
-    sources = _INDICATORS[pattern]
-    if len(sources) == 1:
-        return {
-            "status": "UNCONFIRMED — single source, awaiting corroboration",
-            "sources": sources
-        }
+    message_ids = _INDICATORS[pattern]
+    messages = [_MESSAGES[mid] for mid in message_ids if mid in _MESSAGES]
     
-    # In Sprint 3, this will compute a real score
-    return {
-        "status": "CONFIRMED",
-        "score": len(sources),
-        "sources": sources
-    }
+    result = compute_corroboration_score(messages)
+    
+    # Add sources for reference
+    result["sources"] = message_ids
+    return result

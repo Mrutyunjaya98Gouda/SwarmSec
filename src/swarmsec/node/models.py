@@ -18,6 +18,13 @@ class TLPMarking(str, Enum):
     # AMBER and RED are explicitly forbidden in this build per AGENTS.md
 
 
+class StixExternalReference(BaseModel):
+    """External reference for STIX objects, used for independence checking."""
+    source_name: str
+    url: Optional[str] = None
+    external_id: Optional[str] = None
+
+
 class StixIndicator(BaseModel):
     """A minimal STIX 2.1 Indicator object."""
     type: str = "indicator"
@@ -29,6 +36,7 @@ class StixIndicator(BaseModel):
     pattern_type: str = "stix"
     valid_from: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
     object_marking_refs: List[TLPMarking]
+    external_references: List[StixExternalReference] = Field(default_factory=list)
 
 # -------------------------------------------------------------------------
 # SwarmSec Transport Envelope
