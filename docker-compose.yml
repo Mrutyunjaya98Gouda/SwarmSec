@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  registrar:
+    build: .
+    command: ["uvicorn", "swarmsec.registrar.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  node1:
+    build: .
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    environment:
+      - REGISTRAR_URL=http://registrar:8000
+      - PEERS=http://node2:8002,http://node3:8003
+    depends_on:
+      - registrar
+
+  node2:
+    build: .
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "8002:8002"
+    environment:
+      - REGISTRAR_URL=http://registrar:8000
+      - PEERS=http://node1:8001,http://node3:8003
+    depends_on:
+      - registrar
+
+  node3:
+    build: .
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8003"]
+    ports:
+      - "8003:8003"
+    environment:
+      - REGISTRAR_URL=http://registrar:8000
+      - PEERS=http://node1:8001,http://node2:8002
+    depends_on:
+      - registrar
