@@ -38,6 +38,18 @@ class StixIndicator(BaseModel):
     object_marking_refs: List[TLPMarking]
     external_references: List[StixExternalReference] = Field(default_factory=list)
 
+
+class StixOpinion(BaseModel):
+    """A minimal STIX 2.1 Opinion object for feedback."""
+    type: str = "opinion"
+    id: str = Field(default_factory=lambda: f"opinion--{uuid4()}")
+    created: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    modified: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    opinion: str  # "strongly-agree", "agree", "neutral", "disagree", "strongly-disagree"
+    object_refs: List[str]  # IDs of the Indicators being opined on
+    object_marking_refs: List[TLPMarking]
+
+
 # -------------------------------------------------------------------------
 # SwarmSec Transport Envelope
 # -------------------------------------------------------------------------
@@ -62,7 +74,7 @@ class SwarmSecMessage(BaseModel):
     """
     envelope: SignableEnvelopeFields
     signature: str = ""  # Base64 Ed25519 signature over canonicalized envelope
-    payload: StixIndicator
+    payload: StixIndicator | StixOpinion
 
     def compute_payload_hash(self) -> str:
         """Compute the SHA-256 hash of the canonicalized payload."""

@@ -24,7 +24,11 @@ def get_pattern_entropy_weight(pattern: str) -> float:
     return 0.5
 
 
-def compute_corroboration_score(messages: List[SwarmSecMessage]) -> dict:
+def compute_corroboration_score(
+    messages: List[SwarmSecMessage], 
+    feedbacks: List[SwarmSecMessage] = None,
+    all_messages: dict = None
+) -> dict:
     """
     Compute the local corroboration score for a set of messages reporting the same indicator.
     
@@ -79,6 +83,28 @@ def compute_corroboration_score(messages: List[SwarmSecMessage]) -> dict:
             # Base score is 0 for the first source
             if independent_sources_count > 1:
                 score += entropy_weight
+                
+    # Process feedback (Opinions)
+    if feedbacks and all_messages:
+        from swarmsec.node.feedback_graph import build_endorsement_graph, get_feedback_weight
+        graph, totals = build_endorsement_graph(all_messages)
+        
+        target_cred_id = sorted_messages[0].envelope.credential_id
+        
+        for fb in feedbacks:
+            giver_id = fb.envelope.credential_id
+            if giver_id == target_cred_id or giver_id in seen_credentials:
+                continue
+                
+            weight = get_feedback_weight(giver_id, target_cred_id, graph, totals)
+            if weight > 0:
+                seen_credentials.add(giver_id)
+                independent_sources_count += 1
+                
+                # Feedback weight depends on the entropy of the indicator and the graph penalty
+                score += (entropy_weight * weight)
+                if weight < 1.0:
+                    flags.add("feedback_downweighted")
                 
     if independent_sources_count <= 1:
         status = "UNCONFIRMED — single source, awaiting corroboration"
