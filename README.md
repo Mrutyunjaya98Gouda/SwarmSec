@@ -1,10 +1,6 @@
 # SwarmSec
-Decentralized, pseudonymous threat-intel sharing — corroboration-based trust instead of blockchain consensus, so orgs can report without exposure.
 
-# SwarmSec
-
-> Decentralized, pseudonymous threat-intelligence sharing — corroboration-based trust instead of
-> blockchain consensus, so orgs can report without staking their reputation on it.
+> Decentralized, pseudonymous threat-intelligence sharing — corroboration-based trust instead of blockchain consensus, so orgs can report without exposure.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-in%20development-yellow.svg)]()
@@ -32,56 +28,51 @@ fully covers.
 
 ## How it works
 
+```
 +--------------------------------------------------------------------+
 |                          SWARMSEC NETWORK                          |
 |                                                                    |
-|   +------------+      +------------+      +------------+           |
-|   |   Node A   |      |   Node B   |      |   Node C   |           |
-|   |            |<---->|            |<---->|            |           |
-|   | pseudonym  |      | pseudonym  |      | pseudonym  |           |
-|   | keypair    |      | keypair    |      | keypair    |           |
-|   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |           |
-|   |            |      |            |      |            |           |
-|   | gossip     | GossipSub / libp2p, no chain in this path         |
-|   |            |      |            |      |            |           |
-|   | 3-model    |      | 3-model    |      | 3-model    |           |
-|   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|           |
-|   | scorer     |      | scorer     |      | scorer     |           |
-|   | (randomized|      | (randomized|      | (randomized|           |
-|   |  params —  |      |  params —  |      |  params —  |           |
-|   |  no two    |      |  no two    |      |  no two    |           |
-|   |  nodes must|      |  nodes must|      |  nodes must|           |
-|   |  agree)    |      |  agree)    |      |  agree)    |           |
-|   +------------+      +------------+      +------------+           |
+|   +------------+      +------------+      +------------+       |
+|   |   Node A   |      |   Node B   |      |   Node C   |       |
+|   |            |<---->|            |<---->|            |       |
+|   | pseudonym  |      | pseudonym  |      | pseudonym  |       |
+|   | keypair    |      | keypair    |      | keypair    |       |
+|   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |       |
+|   |            |      |            |      |            |       |
+|   | gossip     | HTTP relay (or GossipSub in future)           |
+|   |            |      |            |      |            |       |
+|   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|       |
+|   | scorer     |      | scorer     |      | scorer     |       |
+|   | (fixed     |      | (fixed     |      | (fixed     |       |
+|   |  params)   |      |  params)   |      |  params)   |       |
+|   +------------+      +------------+      +------------+       |
 +--------------------------------------------------------------------+
-                              |
-       rare: one-time registration + periodic transparency log
-                              v
-   +----------------------------------------------------------------+
-   |     REGISTRAR CONSTELLATION(S)  (consumers pick which to trust)|
-   |  - internal 2-of-3 threshold signing per registrar (HSM-backed)|
-   |  - vets an org's real-world legitimacy ONCE                    |
-   |  - blind-signs that org's chosen pseudonym key                 |
-   |  - EVERY issued credential published to a public, append-only, |
-   |    hash-chained transparency log — misissuance is mechanically |
-   |    detectable by anyone, not adjudicated by a governance vote  |
-   +----------------------------------------------------------------+
-                              |
-                    (Phase 3, optional)
-                              v 
-   +----------------------------------------------------------------+
-   |     CHECKPOINT ANCHOR  (tiny contract, cheap L2)               |
-   |     stores only: date + log root + registrar signatures        |
-   |     no staking. no slashing. no per-IoC voting.                |
-   +----------------------------------------------------------------+
-
-
-
+                               |
+        rare: one-time registration + periodic transparency log
+                               v
+    +----------------------------------------------------------------+
+    |     REGISTRAR CONSTELLATION(S)  (consumers pick which to trust)|
+    |  - internal 2-of-3 threshold signing per registrar (HSM-backed)|
+    |  - vets an org's real-world legitimacy ONCE                    |
+    |  - blind-signs that org's chosen pseudonym key                 |
+    |  - EVERY issued credential published to a public, append-only, |
+    |    hash-chained transparency log — misissuance is mechanically |
+    |    detectable by anyone, not adjudicated by a governance vote  |
+    +----------------------------------------------------------------+
+                               |
+                     (Phase 3, optional)
+                               v 
+    +----------------------------------------------------------------+
+    |     CHECKPOINT ANCHOR  (tiny contract, cheap L2)               |
+    |     stores only: date + log root + registrar signatures        |
+    |     no staking. no slashing. no per-IoC voting.                |
+    +----------------------------------------------------------------+
+```
 
 - **Pseudonymous, not anonymous.** Every org gets a persistent identity that's never linked to who
   they are, but *is* linkable to itself — which is what lets reputation build at all.
-- **Gossip, not blockchain, for propagation.** Reports broadcast over libp2p/GossipSub the moment
-  they're signed. No chain, no vote, no gas cost, no delay.
+- **Gossip, not blockchain, for propagation.** Reports broadcast over HTTP or libp2p/GossipSub 
+  the moment they're signed. No chain, no vote, no gas cost, no delay.
 - **Corroboration and feedback, not a global vote, for trust.** Every node scores incoming reports
   locally, across three independent models, informed by corroboration and outcome feedback over
   time — never a single "verified" flag nobody can audit.
@@ -92,7 +83,7 @@ fully covers.
   tool.
 
 Full architecture, every rejected alternative and why, and the complete threat model:
-[`docs/DESIGN.md`](docs/DESIGN.md).
+[`SwarmSec-Design.md`](SwarmSec-Design.md).
 
 ## Status
 
@@ -106,7 +97,7 @@ against a 12-week sprint plan.
 - [ ] Phase 2 — hardening: multi-model scoring, feedback-independence clustering, contribution-gated visibility
 - [ ] Phase 3 — stretch: competing registrar constellations, on-chain checkpoint anchor, anonymous burner mode
 
-Full sprint-by-sprint breakdown: [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
+Full sprint-by-sprint breakdown: [`SwarmSec-Development.md`](SwarmSec-Development.md).
 
 ## Planned usage
 
@@ -132,15 +123,14 @@ swarmsec-node export --format stix
 
 SwarmSec is a research and capstone project. The cryptography has not been professionally audited,
 and no deployment should trust it with real organizational reputations yet — see
-[`docs/DESIGN.md`](docs/DESIGN.md) for an explicit accounting of what's hardened, what's a documented
+[`SwarmSec-Design.md`](SwarmSec-Design.md) for an explicit accounting of what's hardened, what's a documented
 trade-off, and what's still genuinely open. Found a real issue? Please open an issue or reach out
 directly rather than a public PR with exploit details — good habit to start early, even at this
 stage.
 
 ## Built with
 
-Python · [py-libp2p](https://github.com/libp2p/py-libp2p) / GossipSub · FastAPI · Ed25519 ·
-Docker Compose
+Python · FastAPI · Ed25519 · RFC 8785 JSON Canonicalization · Docker Compose
 
 ## License
 
