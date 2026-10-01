@@ -101,3 +101,16 @@ class RegistrationResponse(BaseModel):
     """Response returned after successful registration."""
     credential: Credential
     log_entry: TransparencyLogEntry
+
+
+class CredentialLookupResponse(BaseModel):
+    """Issued credential plus resolved status from signed updates.
+
+    ``credential`` is the original registrar-signed issuance record. Status
+    changes are separate signed objects; mutating ``credential.status`` would
+    invalidate the issuance signature, so callers must use ``resolved_status``.
+    """
+
+    credential: Credential
+    resolved_status: Literal["active", "revoked"]
+    latest_status_update: CredentialStatusUpdate | None = None

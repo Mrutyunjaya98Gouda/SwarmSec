@@ -7,6 +7,27 @@ techniques get reused against the next victim. This is the complete, final recor
 architecture, the decisions made and rejected along the way, the development plan, and the jury
 presentation — consolidated into one document.
 
+## Current build constraints
+
+This section governs the **current implementation**. Later sections of this document still describe
+research alternatives (blind signatures, randomized multi-model scoring, contribution-gated
+visibility, multiple registrar constellations, blockchain log anchors). Those alternatives are
+**out of scope** for this build and must not be treated as implemented or as work to add.
+
+- **One registrar, one community.** Ordinary Ed25519 credential signatures. No blind signatures.
+  The registrar knows the org-to-pseudonym mapping (deliberate trade-off).
+- **No blockchain, smart contracts, or staking/slashing.** Trust is computed locally by each
+  receiving node from corroboration and feedback only.
+- **One published, fixed-parameter scoring formula.** Not an ensemble. Not randomized per node.
+- **No contribution-gated visibility.** Every node holds the full gossiped history.
+- **Terminology:** “local corroboration score” or “trust ranking,” not “confidence.”
+  “Credentialed collusion resistance,” not “Sybil resistance.”
+  “Correlated-evidence down-weighting,” not “collusion detection.”
+- **STIX 2.1 constrained profile:** Indicator, Opinion/feedback, TLP CLEAR/GREEN only.
+  CTI payload and SwarmSec envelope are separate objects.
+- **Peers independently verify registrar-signed credentials.** They must not trust unsigned
+  transparency-log fields as a substitute for `verify_credential()`.
+
 **Contents:** Overview · The Problem · Why Existing Solutions Fall Short · Core Design Insight ·
 Architecture · Threat Lifecycle · Design Evolution · Gap-Closing Table · What's Actually Novel ·
 What's Still Genuinely Open · Final Pre-Build Review · Technology Stack · Development Plan ·

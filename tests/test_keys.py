@@ -4,10 +4,12 @@ import tempfile
 from pathlib import Path
 
 from swarmsec.crypto.keys import (
+    deserialize_private_key,
     deserialize_public_key,
     generate_keypair,
     load_private_key,
     load_public_key,
+    parse_ed25519_public_key_b64,
     save_keypair,
     serialize_private_key,
     serialize_public_key,
@@ -130,3 +132,30 @@ class TestFileIO:
             priv_path, _ = save_keypair(priv, tmpdir)
             mode = priv_path.stat().st_mode & 0o777
             assert mode == 0o600
+
+
+class TestParseEd25519PublicKeyB64:
+    def test_roundtrip(self):
+        _, pub = generate_keypair()
+        b64 = __import__("base64").b64encode(serialize_public_key(pub)).decode("ascii")
+        restored = parse_ed25519_public_key_b64(b64)
+        assert serialize_public_key(restored) == serialize_public_key(pub)
+
+    def test_invalid_base64(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            parse_ed25519_public_key_b64("%%%not-base64%%%")
+
+    def test_wrong_length(self):
+        import pytest
+        import base64
+
+        with pytest.raises(ValueError):
+            parse_ed25519_public_key_b64(base64.b64encode(b"short").decode("ascii"))
+
+    def test_deserialize_private_key_roundtrip(self):
+        priv, pub = generate_keypair()
+        restored = deserialize_private_key(serialize_private_key(priv))
+        data = b"raw private key"
+        assert verify(pub, data, sign(restored, data))

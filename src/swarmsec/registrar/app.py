@@ -2,56 +2,31 @@
 
 Exposes endpoints for registration, credential retrieval, revocation,
 and transparency log verification.
+
+Peers must fetch a complete Credential from GET /credential/{id} and call
+verify_credential() against /pubkey. Unsigned transparency-log fields are
+not a substitute for a registrar signature.
 """
 
+from __future__ import annotations
+
 import base64
-import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from swarmsec.crypto.keys import (
-    generate_keypair,
-    serialize_public_key,
-)
+from swarmsec.crypto.keys import parse_ed25519_public_key_b64, serialize_public_key
 from swarmsec.registrar.allowlist import is_allowed
-from swarmsec.registrar.credential import (
-    issue_credential,
-    update_status,
-)
+from swarmsec.registrar.credential import issue_credential, update_status
 from swarmsec.registrar.models import (
-    Credential,
+    CredentialLookupResponse,
     CredentialStatusUpdate,
     RegistrationRequest,
     RegistrationResponse,
     TransparencyLogEntry,
 )
-from swarmsec.registrar.transparency_log import TransparencyLog
-
-# Global state for the demo registrar
-_REGISTRAR_PRIVATE_KEY = None
-_REGISTRAR_PUBLIC_KEY = None
-_TRANSPARENCY_LOG = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    global _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY, _TRANSPARENCY_LOG
-
-    # Generate a fresh keypair for the registrar on startup
-    # In production, this would be loaded from secure storage (e.g., HSM)
-    _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY = generate_keypair()
-
-    # Initialize the transparency log (in-memory for tests, or file-backed if configured)
-    log_file = os.environ.get("SWARMSEC_LOG_FILE")
-    _TRANSPARENCY_LOG = TransparencyLog(log_file)
-
-    yield
-
-
-app = FastAPI(title="SwarmSec Registrar", lifespan=lifespan)
+from swarmsec.registrar.state import RegistrarState
 
 
 class VerificationResult(BaseModel):
@@ -59,75 +34,83 @@ class VerificationResult(BaseModel):
     message: str
 
 
-@app.get("/health")
-def health_check():
-    """Simple health check endpoint."""
-    return {"status": "ok"}
+def create_app() -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.registrar = RegistrarState.from_env()
+        yield
+
+    application = FastAPI(title="SwarmSec Registrar", lifespan=lifespan)
+
+    def _state(request: Request) -> RegistrarState:
+        return request.app.state.registrar
+
+    @application.get("/health")
+    def health_check():
+        """Simple health check endpoint."""
+        return {"status": "ok"}
+
+    @application.get("/pubkey")
+    def get_public_key(request: Request):
+        """Return the registrar's public key (needed by peers for verification)."""
+        raw_pubkey = serialize_public_key(_state(request).public_key)
+        return {"public_key_b64": base64.b64encode(raw_pubkey).decode("ascii")}
+
+    @application.post("/register", response_model=RegistrationResponse)
+    def register(request_body: RegistrationRequest, request: Request):
+        """Register a pseudonym and receive a signed credential."""
+        if not is_allowed(request_body.org_id):
+            raise HTTPException(status_code=403, detail="Organization not in allowlist.")
+
+        try:
+            parse_ed25519_public_key_b64(request_body.pseudonym_public_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        state = _state(request)
+        cred = issue_credential(request_body.pseudonym_public_key, state.private_key)
+        log_entry = state.store_credential(cred)
+        return RegistrationResponse(credential=cred, log_entry=log_entry)
+
+    @application.get("/credential/{credential_id}", response_model=CredentialLookupResponse)
+    def get_credential(credential_id: str, request: Request):
+        """Return the issued signed credential and resolved status."""
+        state = _state(request)
+        cred = state.get_credential(credential_id)
+        if cred is None:
+            raise HTTPException(status_code=404, detail="Credential not found")
+        resolved, latest = state.resolve_status(credential_id)
+        return CredentialLookupResponse(
+            credential=cred,
+            resolved_status=resolved,
+            latest_status_update=latest,
+        )
+
+    @application.post(
+        "/credential/{credential_id}/revoke",
+        response_model=CredentialStatusUpdate,
+    )
+    def revoke_credential(credential_id: str, request: Request):
+        """Revoke a known credential and append a signed status update."""
+        state = _state(request)
+        if state.get_credential(credential_id) is None:
+            raise HTTPException(status_code=404, detail="Credential not found")
+        update = update_status(credential_id, "revoked", state.private_key)
+        state.store_status_update(update)
+        return update
+
+    @application.get("/log", response_model=list[TransparencyLogEntry])
+    def get_log(request: Request):
+        """Return the full transparency log."""
+        return _state(request).log.get_all_entries()
+
+    @application.get("/log/verify", response_model=VerificationResult)
+    def verify_log(request: Request):
+        """Verify the integrity of the transparency log."""
+        is_valid, msg = _state(request).log.verify_chain()
+        return VerificationResult(is_valid=is_valid, message=msg)
+
+    return application
 
 
-@app.get("/pubkey")
-def get_public_key():
-    """Return the registrar's public key (needed by peers for verification)."""
-    raw_pubkey = serialize_public_key(_REGISTRAR_PUBLIC_KEY)
-    return {"public_key_b64": base64.b64encode(raw_pubkey).decode("ascii")}
-
-
-@app.post("/register", response_model=RegistrationResponse)
-def register(request: RegistrationRequest):
-    """Register a pseudonym and receive a credential."""
-    if not is_allowed(request.org_id):
-        raise HTTPException(status_code=403, detail="Organization not in allowlist.")
-
-    try:
-        base64.b64decode(request.pseudonym_public_key)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64 pseudonym key.")
-
-    # Issue credential (registrar signs it)
-    cred = issue_credential(request.pseudonym_public_key, _REGISTRAR_PRIVATE_KEY)
-
-    # Append to transparency log
-    log_entry = _TRANSPARENCY_LOG.append(cred.signable_fields())
-
-    return RegistrationResponse(credential=cred, log_entry=log_entry)
-
-
-@app.get("/credential/{credential_id}", response_model=Credential)
-def get_credential(credential_id: str):
-    """Retrieve an issued credential from the log."""
-    import json
-
-    for entry in _TRANSPARENCY_LOG.get_all_entries():
-        payload = json.loads(base64.b64decode(entry.payload_canonical).decode("utf-8"))
-        if payload.get("credential_id") == credential_id:
-            return Credential(
-                credential_id=payload["credential_id"],
-                pseudonym_public_key=payload["pseudonym_public_key"],
-                status=payload.get("status", "active"),
-                issued_at=payload.get("issued_at", ""),
-                expires_at=payload.get("expires_at", ""),
-                registrar_signature=entry.signature,
-            )
-
-    raise HTTPException(status_code=404, detail="Credential not found")
-
-
-@app.post("/credential/{credential_id}/revoke", response_model=CredentialStatusUpdate)
-def revoke_credential(credential_id: str):
-    """Revoke a credential and append the status update to the log."""
-    update = update_status(credential_id, "revoked", _REGISTRAR_PRIVATE_KEY)
-    _TRANSPARENCY_LOG.append(update.signable_fields())
-    return update
-
-
-@app.get("/log", response_model=list[TransparencyLogEntry])
-def get_log():
-    """Return the full transparency log."""
-    return _TRANSPARENCY_LOG.get_all_entries()
-
-
-@app.get("/log/verify", response_model=VerificationResult)
-def verify_log():
-    """Verify the integrity of the transparency log."""
-    is_valid, msg = _TRANSPARENCY_LOG.verify_chain()
-    return VerificationResult(is_valid=is_valid, message=msg)
+app = create_app()

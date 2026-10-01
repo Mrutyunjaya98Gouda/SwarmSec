@@ -9,6 +9,7 @@ swarmsec.crypto.canonicalize), never on raw JSON strings.
 
 from __future__ import annotations
 
+import base64
 import os
 from pathlib import Path
 
@@ -58,7 +59,27 @@ def serialize_public_key(public_key: Ed25519PublicKey) -> bytes:
 
 def deserialize_public_key(raw: bytes) -> Ed25519PublicKey:
     """Import a public key from raw 32 bytes."""
+    if len(raw) != 32:
+        raise ValueError("Ed25519 public key must be exactly 32 bytes.")
     return Ed25519PublicKey.from_public_bytes(raw)
+
+
+def deserialize_private_key(raw: bytes) -> Ed25519PrivateKey:
+    """Import a private key from the raw 32-byte seed."""
+    if len(raw) != 32:
+        raise ValueError("Ed25519 private key must be exactly 32 bytes.")
+    return Ed25519PrivateKey.from_private_bytes(raw)
+
+
+def parse_ed25519_public_key_b64(value: str) -> Ed25519PublicKey:
+    """Decode a strict base64 Ed25519 public key (exactly 32 raw bytes)."""
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except Exception as exc:
+        raise ValueError("pseudonym public key is not valid base64") from exc
+    if len(raw) != 32:
+        raise ValueError("pseudonym public key must decode to exactly 32 bytes")
+    return deserialize_public_key(raw)
 
 
 def serialize_private_key(private_key: Ed25519PrivateKey) -> bytes:
@@ -113,6 +134,32 @@ def load_private_key(path: str | Path) -> Ed25519PrivateKey:
     if not isinstance(key, Ed25519PrivateKey):
         raise TypeError(f"Expected Ed25519 private key, got {type(key).__name__}")
     return key
+
+
+def load_or_create_keypair(path: str | Path | None) -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
+    """Load a PEM private key from ``path``, or generate and persist one.
+
+    If ``path`` is None, generate an ephemeral in-memory keypair (credentials
+    issued with it will not verify after process restart).
+    """
+    if path is None:
+        return generate_keypair()
+
+    key_path = Path(path)
+    if key_path.exists():
+        private_key = load_private_key(key_path)
+        return private_key, private_key.public_key()
+
+    private_key, public_key = generate_keypair()
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    key_path.write_bytes(pem)
+    os.chmod(key_path, 0o600)
+    return private_key, public_key
 
 
 def load_public_key(path: str | Path) -> Ed25519PublicKey:

@@ -1,3 +1,13 @@
+# SwarmSec development plan
+
+Canonical copy of this document. Historical research alternatives in [DESIGN.md](DESIGN.md)
+that contradict `AGENTS.md` are **not** in scope for the current build.
+
+Sprint 2 remains **libp2p/GossipSub** for inter-node dissemination. HTTP is the local control
+plane (registrar API, node query/ingest), not a substitute for GossipSub.
+
+---
+
 Sprint 1 — Registration & credentials (sprint-1-registration)
 
 Read AGENTS.md before starting. Work on branch sprint-1-registration. Do not touch main. Do not

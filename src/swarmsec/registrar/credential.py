@@ -11,7 +11,7 @@ signs with ordinary Ed25519. No blind signatures.
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 from swarmsec.crypto.canonicalize import canonicalize
 from swarmsec.crypto.keys import sign, verify
+from swarmsec.crypto.timeutil import format_utc, parse_iso8601, utc_now_iso
 from swarmsec.registrar.models import (
     Credential,
     CredentialStatusUpdate,
@@ -49,14 +50,14 @@ def issue_credential(
     Returns:
         A signed Credential.
     """
-    now = datetime.now(timezone.utc)
+    now = parse_iso8601(utc_now_iso())
     expires = now + timedelta(days=validity_days)
 
     cred = Credential(
         pseudonym_public_key=pseudonym_public_key_b64,
         status="active",
-        issued_at=now.isoformat(),
-        expires_at=expires.isoformat(),
+        issued_at=utc_now_iso(),
+        expires_at=format_utc(expires),
     )
 
     # Canonicalize the signable fields, then sign
@@ -110,12 +111,12 @@ def update_status(
     Returns:
         A signed CredentialStatusUpdate.
     """
-    now = datetime.now(timezone.utc)
+    now = utc_now_iso()
 
     update = CredentialStatusUpdate(
         credential_id=credential_id,
         new_status=new_status,
-        updated_at=now.isoformat(),
+        updated_at=now,
         registrar_signature="",
     )
 
@@ -155,5 +156,5 @@ def is_credential_expired(credential: Credential) -> bool:
     """Check if a credential has passed its expiry time."""
     if not credential.expires_at:
         return False
-    expires = datetime.fromisoformat(credential.expires_at)
-    return datetime.now(timezone.utc) > expires
+    expires = parse_iso8601(credential.expires_at)
+    return parse_iso8601(utc_now_iso()) > expires
