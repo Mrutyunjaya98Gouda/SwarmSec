@@ -39,18 +39,16 @@ _TRANSPARENCY_LOG = None
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     global _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY, _TRANSPARENCY_LOG
-    
+
     # Generate a fresh keypair for the registrar on startup
     # In production, this would be loaded from secure storage (e.g., HSM)
     _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY = generate_keypair()
-    
+
     # Initialize the transparency log (in-memory for tests, or file-backed if configured)
     log_file = os.environ.get("SWARMSEC_LOG_FILE")
     _TRANSPARENCY_LOG = TransparencyLog(log_file)
-    
+
     yield
-    
-    # Cleanup (none needed)
 
 
 app = FastAPI(title="SwarmSec Registrar", lifespan=lifespan)
@@ -81,41 +79,37 @@ def register(request: RegistrationRequest):
         raise HTTPException(status_code=403, detail="Organization not in allowlist.")
 
     try:
-        # Validate that the provided key is valid base64
         base64.b64decode(request.pseudonym_public_key)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 pseudonym key.")
 
     # Issue credential (registrar signs it)
     cred = issue_credential(request.pseudonym_public_key, _REGISTRAR_PRIVATE_KEY)
-    
+
     # Append to transparency log
     log_entry = _TRANSPARENCY_LOG.append(cred.signable_fields())
-    
+
     return RegistrationResponse(credential=cred, log_entry=log_entry)
 
 
 @app.get("/credential/{credential_id}", response_model=Credential)
 def get_credential(credential_id: str):
-    """Retrieve an issued credential from the log.
-    
-    In a real implementation we would have an index. For demo, we just
-    scan the log.
-    """
+    """Retrieve an issued credential from the log."""
+    import json
+
     for entry in _TRANSPARENCY_LOG.get_all_entries():
-        import json
-        from swarmsec.crypto.canonicalize import canonicalize
-        # Decode the payload
         payload = json.loads(base64.b64decode(entry.payload_canonical).decode("utf-8"))
         if payload.get("credential_id") == credential_id:
-            # We reconstruct the credential. In a real system, we'd store the full
-            # credential (including signature) somewhere, but the log only stores
-            # the signable fields. We'll simplify and say /register is the main way
-            # to get the fully signed cred.
-            pass
-            
-    # For this demo, let's just say this endpoint isn't fully supported without a DB.
-    raise HTTPException(status_code=501, detail="Not implemented without DB.")
+            return Credential(
+                credential_id=payload["credential_id"],
+                pseudonym_public_key=payload["pseudonym_public_key"],
+                status=payload.get("status", "active"),
+                issued_at=payload.get("issued_at", ""),
+                expires_at=payload.get("expires_at", ""),
+                registrar_signature=entry.signature,
+            )
+
+    raise HTTPException(status_code=404, detail="Credential not found")
 
 
 @app.post("/credential/{credential_id}/revoke", response_model=CredentialStatusUpdate)
