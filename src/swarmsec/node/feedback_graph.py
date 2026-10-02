@@ -31,6 +31,7 @@ def build_endorsement_graph(
     for msg in all_messages.values():
         if msg.payload.type == "indicator":
             indicator_creators[msg.payload.id] = msg.envelope.credential_id
+            indicator_creators[msg.envelope.message_id] = msg.envelope.credential_id
 
     # Then, tally the feedback (Opinions)
     for msg in all_messages.values():

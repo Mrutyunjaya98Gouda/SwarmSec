@@ -97,25 +97,22 @@ def register(request: RegistrationRequest):
 
 @app.get("/credential/{credential_id}", response_model=Credential)
 def get_credential(credential_id: str):
-    """Retrieve an issued credential from the log.
-    
-    In a real implementation we would have an index. For demo, we just
-    scan the log.
-    """
+    """Retrieve an issued credential from the log."""
+    import json
+
     for entry in _TRANSPARENCY_LOG.get_all_entries():
-        import json
-        from swarmsec.crypto.canonicalize import canonicalize
-        # Decode the payload
         payload = json.loads(base64.b64decode(entry.payload_canonical).decode("utf-8"))
         if payload.get("credential_id") == credential_id:
-            # We reconstruct the credential. In a real system, we'd store the full
-            # credential (including signature) somewhere, but the log only stores
-            # the signable fields. We'll simplify and say /register is the main way
-            # to get the fully signed cred.
-            pass
-            
-    # For this demo, let's just say this endpoint isn't fully supported without a DB.
-    raise HTTPException(status_code=501, detail="Not implemented without DB.")
+            return Credential(
+                credential_id=payload["credential_id"],
+                pseudonym_public_key=payload["pseudonym_public_key"],
+                status=payload.get("status", "active"),
+                issued_at=payload.get("issued_at", ""),
+                expires_at=payload.get("expires_at", ""),
+                registrar_signature=entry.signature,
+            )
+
+    raise HTTPException(status_code=404, detail="Credential not found")
 
 
 @app.post("/credential/{credential_id}/revoke", response_model=CredentialStatusUpdate)

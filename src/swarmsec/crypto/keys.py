@@ -70,6 +70,11 @@ def serialize_private_key(private_key: Ed25519PrivateKey) -> bytes:
     )
 
 
+def deserialize_private_key(raw: bytes) -> Ed25519PrivateKey:
+    """Import a private key from raw 32 bytes (the seed)."""
+    return Ed25519PrivateKey.from_private_bytes(raw)
+
+
 def save_keypair(
     private_key: Ed25519PrivateKey,
     directory: str | Path,

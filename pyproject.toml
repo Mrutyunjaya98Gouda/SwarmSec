@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarmsec"
+version = "0.1.0"
+description = "Permissioned peer-to-peer CTI exchange with local corroboration scoring"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=43.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "click>=8.1",
+    "pydantic>=2.9",
+    "rich>=13.0",
+    "jcs>=0.2",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[project.scripts]
+swarmsec-node = "swarmsec.cli.main:cli"
+swarmsec = "swarmsec.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

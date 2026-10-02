@@ -100,3 +100,34 @@ cluster. The system cannot differentiate exclusive mutual endorsement from collu
 external context. This is a conscious trade-off: accepting a false-positive on exclusively mutual
 endorsers in exchange for reliably catching dense coordinated clusters.
 
+## Sprint 5
+
+### Advisory Output and Human Decision Gating
+
+Per `AGENTS.md`, SwarmSec is strictly advisory: it ranks and annotates local corroboration, but
+never makes automated block/allow containment decisions.
+
+All CLI commands (`query`, `feed`, `submit`, `feedback`) and terminal dashboard screens terminate with
+or prominently display the mandatory operational disclaimer:
+> "ADVISORY ONLY: SwarmSec computes local corroboration scores and trust rankings.
+> This output is NOT an automated block/allow decision; a human analyst must make that call."
+
+### Terminal Live Dashboard (`swarmsec.cli.dashboard`)
+
+Built with `rich`:
+- **Header**: Active node status, connected peers count, total indicators, and total gossiped messages.
+- **Ranked Feed Table**: Displays indicators ranked descending by `local_corroboration_score`, independent sources count, and clear flags.
+- **Credentialed Collusion Resistance Alert**: Dynamically triggers when the correlated-evidence down-weighting formula reduces scores, detailing the affected pattern, report count, and feedback count.
+- **Operational Advisory Footer**: Persistent disclaimer banner.
+
+### End-to-End Demonstration (`scripts/demo_end_to_end.sh`)
+
+An automated bash harness that executes the entire end-to-end lifecycle on isolated daemons:
+1. **Stage 1 (Clean single source)**: Org A reports an indicator; status displays `UNCONFIRMED` (score 0.00).
+2. **Stage 2 (Independent corroboration)**: Org B and Org C report the same indicator; score advances to 2.00, status displays `CONFIRMED`, and status remains `CLEAN`.
+3. **Stage 3 (Dense-cluster attack)**: 4 colluding pseudonyms densely cross-endorse; correlated-evidence down-weighting triggers (`TRIGGERED`), and the terminal dashboard displays the active collusion alert panel.
+
+**Definition of Done Verification**:
+The end-to-end script was run with 3 consecutive iterations (`./scripts/demo_end_to_end.sh 3`), completing all stages with zero manual intervention.
+
+

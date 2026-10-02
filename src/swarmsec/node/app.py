@@ -140,7 +140,11 @@ async def publish_local(req: PublishRequest):
     
     asyncio.create_task(_gossip_to_peers(msg))
     
-    return {"status": "published", "message_id": msg.envelope.message_id}
+    return {
+        "status": "published",
+        "message_id": msg.envelope.message_id,
+        "indicator_id": msg.payload.id,
+    }
 
 
 @app.post("/feedback")
@@ -183,6 +187,12 @@ async def publish_feedback(req: PublishFeedbackRequest):
     return {"status": "feedback_published", "message_id": msg.envelope.message_id}
 
 
+@app.get("/health")
+def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
 @app.get("/query")
 def query_indicator(pattern: str):
     """Query the local node for an indicator."""
@@ -197,11 +207,11 @@ def query_indicator(pattern: str):
     # Collect feedback (Opinion messages) targeting any indicator in these messages
     feedback_messages = []
     for msg in messages:
-        indicator_id = msg.payload.id
-        if indicator_id in _FEEDBACKS:
-            for fb_mid in _FEEDBACKS[indicator_id]:
-                if fb_mid in _MESSAGES:
-                    feedback_messages.append(_MESSAGES[fb_mid])
+        for tid in (msg.payload.id, msg.envelope.message_id):
+            if tid in _FEEDBACKS:
+                for fb_mid in _FEEDBACKS[tid]:
+                    if fb_mid in _MESSAGES and _MESSAGES[fb_mid] not in feedback_messages:
+                        feedback_messages.append(_MESSAGES[fb_mid])
     
     result = compute_corroboration_score(
         messages,
@@ -211,4 +221,66 @@ def query_indicator(pattern: str):
     
     # Add sources for reference
     result["sources"] = message_ids
+    result["pattern"] = pattern
+    result["advisory_disclaimer"] = (
+        "ADVISORY ONLY: SwarmSec computes local corroboration scores and trust rankings. "
+        "This is NOT an automated block/allow decision; a human analyst must make that call."
+    )
     return result
+
+
+@app.get("/feed")
+def get_feed():
+    """Retrieve all indicators ranked by local corroboration score."""
+    from swarmsec.node.scoring import compute_corroboration_score
+
+    items = []
+    for pattern, message_ids in _INDICATORS.items():
+        messages = [_MESSAGES[mid] for mid in message_ids if mid in _MESSAGES]
+        if not messages:
+            continue
+
+        feedback_messages = []
+        for msg in messages:
+            for tid in (msg.payload.id, msg.envelope.message_id):
+                if tid in _FEEDBACKS:
+                    for fb_mid in _FEEDBACKS[tid]:
+                        if fb_mid in _MESSAGES and _MESSAGES[fb_mid] not in feedback_messages:
+                            feedback_messages.append(_MESSAGES[fb_mid])
+
+        score_data = compute_corroboration_score(
+            messages,
+            feedbacks=feedback_messages if feedback_messages else None,
+            all_messages=_MESSAGES if feedback_messages else None,
+        )
+
+        first_msg = min(messages, key=lambda m: m.envelope.timestamp)
+        latest_msg = max(messages, key=lambda m: m.envelope.timestamp)
+
+        item = {
+            "pattern": pattern,
+            "local_corroboration_score": score_data["local_corroboration_score"],
+            "status": score_data["status"],
+            "independent_sources": score_data["independent_sources"],
+            "flags": score_data["flags"],
+            "downweighted": "feedback_downweighted" in score_data["flags"],
+            "reports_count": len(messages),
+            "feedback_count": len(feedback_messages),
+            "first_seen": first_msg.envelope.timestamp,
+            "last_seen": latest_msg.envelope.timestamp,
+            "sources": message_ids,
+        }
+        items.append(item)
+
+    # Sort descending by score, then latest_seen
+    items.sort(key=lambda x: (x["local_corroboration_score"], x["last_seen"]), reverse=True)
+
+    return {
+        "ranked_indicators": items,
+        "total_indicators": len(items),
+        "total_messages": len(_MESSAGES),
+        "advisory_disclaimer": (
+            "ADVISORY ONLY: SwarmSec computes local corroboration scores and trust rankings. "
+            "This is NOT an automated block/allow decision; a human analyst must make that call."
+        ),
+    }
