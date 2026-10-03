@@ -32,20 +32,20 @@ fully covers.
 +--------------------------------------------------------------------+
 |                          SWARMSEC NETWORK                          |
 |                                                                    |
-|   +------------+      +------------+      +------------+       |
-|   |   Node A   |      |   Node B   |      |   Node C   |       |
-|   |            |<---->|            |<---->|            |       |
-|   | pseudonym  |      | pseudonym  |      | pseudonym  |       |
-|   | keypair    |      | keypair    |      | keypair    |       |
-|   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |       |
-|   |            |      |            |      |            |       |
-|   | gossip     | HTTP relay (or GossipSub in future)           |
-|   |            |      |            |      |            |       |
-|   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|       |
-|   | scorer     |      | scorer     |      | scorer     |       |
-|   | (fixed     |      | (fixed     |      | (fixed     |       |
-|   |  params)   |      |  params)   |      |  params)   |       |
-|   +------------+      +------------+      +------------+       |
+|   +------------+      +------------+      +------------+           |
+|   |   Node A   |      |   Node B   |      |   Node C   |           |
+|   |            |<---->|            |<---->|            |           |
+|   | pseudonym  |      | pseudonym  |      | pseudonym  |           |
+|   | keypair    |      | keypair    |      | keypair    |           |
+|   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |           |
+|   |            |      |            |      |            |           |
+|   | gossip     | HTTP relay (or GossipSub in future)               |
+|   |            |      |            |      |            |           |
+|   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|           |
+|   | scorer     |      | scorer     |      | scorer     |           |
+|   | (fixed     |      | (fixed     |      | (fixed     |           |
+|   |  params)   |      |  params)   |      |  params)   |           |
+|   +------------+      +------------+      +------------+           |
 +--------------------------------------------------------------------+
                                |
         rare: one-time registration + periodic transparency log
