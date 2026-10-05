@@ -136,8 +136,8 @@ def get_feedback_weight(
     # --- Signal 3: Cluster density penalty ---
     cluster_density = _get_cluster_density(giver_cred, target_cred, graph)
     # Scale cluster density: if >50% of giver's other targets also endorse the target,
-    # that's strong evidence of a coordinated cluster
-    cluster_penalty = cluster_density * 0.5  # max contribution = 0.5
+    # that's strong evidence of a coordinated cluster. A fully dense cluster gets penalty 1.0.
+    cluster_penalty = cluster_density * 1.0
 
     # --- Combined penalty ---
     total_penalty = repeat_penalty + mutual_amplification + cluster_penalty

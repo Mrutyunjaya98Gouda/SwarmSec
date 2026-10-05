@@ -337,7 +337,7 @@ def run_evaluation() -> list[ScenarioResult]:
             feedbacks=meta.get("feedbacks", []),
             all_messages=meta.get("all_messages", {}),
         )
-        sw_accepted = sw_result["local_corroboration_score"] > 0 and sw_result["independent_sources"] > 1
+        sw_accepted = sw_result["local_corroboration_score"] >= 3.0 and sw_result["independent_sources"] > 1
         results.append(ScenarioResult(
             scenario_name=name,
             method="swarmsec",
@@ -416,7 +416,7 @@ def compute_tta(
             feedbacks=feedbacks,
             all_messages=all_messages,
         )
-        return r["local_corroboration_score"] > 0 and r["independent_sources"] > 1
+        return r["local_corroboration_score"] >= 3.0 and r["independent_sources"] > 1
 
     def quorum_accepts(msgs):
         return quorum.score(msgs)["accepted"]

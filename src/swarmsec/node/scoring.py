@@ -121,14 +121,16 @@ def compute_corroboration_score(
                 continue
                 
             weight = get_feedback_weight(giver_id, target_cred_id, graph, totals)
+            
+            if weight < 1.0:
+                flags.add("feedback_downweighted")
+                
             if weight > 0 and sentiment != 0.0:
                 seen_credentials.add(giver_id)
                 independent_sources_count += (1 if sentiment > 0 else 0)
                 
                 # Feedback weight depends on the entropy of the indicator and the graph penalty
                 score += (entropy_weight * weight * sentiment)
-                if weight < 1.0:
-                    flags.add("feedback_downweighted")
                 
     if independent_sources_count <= 1:
         status = "UNCONFIRMED — single source, awaiting corroboration"

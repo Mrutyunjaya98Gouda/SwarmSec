@@ -321,8 +321,8 @@ class TestSwarmSecVsBaselines:
             feedbacks=meta["feedbacks"],
             all_messages=meta["all_messages"],
         )
-        # 5 independent sources of SHA-256 hash (entropy=1.0) → score should be > 0
-        assert result["local_corroboration_score"] > 0
+        # 5 independent sources of SHA-256 hash (entropy=1.0) → score should be >= 3.0
+        assert result["local_corroboration_score"] >= 3.0
         assert result["independent_sources"] >= 2
 
     def test_tta_not_worse_than_quorum_on_legitimate(self):
@@ -376,7 +376,7 @@ class TestSwarmSecVsBaselines:
             all_messages=boost_meta["all_messages"],
         )
         sw_accepted = (
-            sw_result["local_corroboration_score"] > 0
+            sw_result["local_corroboration_score"] >= 3.0
             and sw_result["independent_sources"] > 1
         )
         assert not sw_accepted or "feedback_downweighted" in sw_result["flags"], (
@@ -414,6 +414,6 @@ class TestSwarmSecVsBaselines:
         sw_far = far.get("swarmsec", 1.0)
         q_far = far.get("quorum", 1.0)
         
-        # SwarmSec accepts all 3 (FAR 1.0) while Quorum rejects endorsement-boost (FAR ~0.667)
-        assert sw_far == 1.0, f"Expected SwarmSec FAR to be 1.0, got {sw_far}"
+        # With the improved correlated-evidence down-weighting and >3.0 threshold, SwarmSec FAR is reduced.
+        assert abs(sw_far - 1/3) < 0.01, f"Expected SwarmSec FAR to be approx 0.333, got {sw_far}"
         assert abs(q_far - 2/3) < 0.01, f"Expected Quorum FAR to be 0.667, got {q_far}"

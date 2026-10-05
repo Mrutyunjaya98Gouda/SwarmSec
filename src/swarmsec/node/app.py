@@ -24,6 +24,8 @@ _PEERS = []
 _MESSAGES = {}  # message_id -> SwarmSecMessage
 _INDICATORS = {}  # indicator pattern -> list of message_ids (for corroboration tracking)
 _FEEDBACKS = {}  # indicator_id -> list of message_ids (for feedback tracking)
+_REVOKED_CREDENTIALS = set()
+_SEQ_NUMS = {}  # credential_id -> int (highest sequence number seen)
 _VERIFIER = None
 
 
@@ -56,14 +58,14 @@ app.add_middleware(
 class PublishRequest(BaseModel):
     """Local request to publish a new indicator."""
     credential_id: str
-    private_key_b64: str  # In a real system, the daemon would hold this securely
+    private_key_b64: str | None = None  # Loaded from env if not provided
     pattern: str
 
 
 class PublishFeedbackRequest(BaseModel):
     """Local request to publish feedback (Opinion) on an existing indicator."""
     credential_id: str
-    private_key_b64: str
+    private_key_b64: str | None = None
     indicator_id: str
     opinion: str = "agree"
 
@@ -91,8 +93,14 @@ async def receive_gossip(message: SwarmSecMessage):
         logger.warning(f"Message rejected: {reason}")
         raise HTTPException(status_code=400, detail=f"Rejected: {reason}")
 
-    # 2. Store it locally
+    # 1.5 Sequence number check (prevent stale replay)
+    current_seq = _SEQ_NUMS.get(message.envelope.credential_id, 0)
+    if message.envelope.sequence_number <= current_seq:
+        return {"status": "rejected_stale_sequence"}
+
+    # 2. Store it locally and update sequence number
     _MESSAGES[message.envelope.message_id] = message
+    _SEQ_NUMS[message.envelope.credential_id] = message.envelope.sequence_number
     
     if message.payload.type == "indicator":
         pattern = message.payload.pattern
@@ -111,6 +119,34 @@ async def receive_gossip(message: SwarmSecMessage):
     return {"status": "accepted"}
 
 
+@app.post("/gossip/revocation")
+async def receive_revocation(update_data: dict):
+    """Receive a credential revocation status update and gossip it."""
+    from swarmsec.registrar.models import CredentialStatusUpdate
+    try:
+        update = CredentialStatusUpdate(**update_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid update: {e}")
+        
+    if update.credential_id in _REVOKED_CREDENTIALS:
+        return {"status": "already_revoked"}
+        
+    # In a real implementation, we would verify the registrar's signature on the update here.
+    # _VERIFIER.verify_status_update(update)
+    
+    _REVOKED_CREDENTIALS.add(update.credential_id)
+    
+    # Gossip to peers
+    async with httpx.AsyncClient() as client:
+        for peer in _PEERS:
+            try:
+                await client.post(f"{peer}/gossip/revocation", json=update_data, timeout=2.0)
+            except Exception:
+                pass
+                
+    return {"status": "revoked_locally"}
+
+
 @app.post("/publish")
 async def publish_local(req: PublishRequest):
     """Originate a new message from this node."""
@@ -126,10 +162,12 @@ async def publish_local(req: PublishRequest):
         object_marking_refs=[TLPMarking.GREEN]
     )
 
+    seq = _SEQ_NUMS.get(req.credential_id, 0) + 1
+    
     # Create envelope
     envelope = SignableEnvelopeFields(
         credential_id=req.credential_id,
-        sequence_number=1,  # Hardcoded for demo
+        sequence_number=seq,
         payload_hash=""  # Will be computed
     )
     
@@ -138,12 +176,19 @@ async def publish_local(req: PublishRequest):
     
     # Sign envelope
     signable_bytes = canonicalize(msg.envelope.model_dump_for_signature())
-    privkey = deserialize_private_key(base64.b64decode(req.private_key_b64))
+    
+    privkey_b64 = req.private_key_b64 or os.environ.get("NODE_PRIVATE_KEY_B64")
+    if not privkey_b64:
+        raise HTTPException(status_code=500, detail="Node private key not configured")
+        
+    privkey = deserialize_private_key(base64.b64decode(privkey_b64))
     signature_bytes = sign(privkey, signable_bytes)
     msg.signature = base64.b64encode(signature_bytes).decode("ascii")
 
     # Store locally and gossip
     _MESSAGES[msg.envelope.message_id] = msg
+    _SEQ_NUMS[req.credential_id] = seq
+    
     if req.pattern not in _INDICATORS:
         _INDICATORS[req.pattern] = []
     _INDICATORS[req.pattern].append(msg.envelope.message_id)
@@ -172,9 +217,11 @@ async def publish_feedback(req: PublishFeedbackRequest):
         object_marking_refs=[TLPMarking.GREEN]
     )
 
+    seq = _SEQ_NUMS.get(req.credential_id, 0) + 1
+
     envelope = SignableEnvelopeFields(
         credential_id=req.credential_id,
-        sequence_number=1,
+        sequence_number=seq,
         payload_hash=""
     )
     
@@ -182,11 +229,17 @@ async def publish_feedback(req: PublishFeedbackRequest):
     msg.envelope.payload_hash = msg.compute_payload_hash()
     
     signable_bytes = canonicalize(msg.envelope.model_dump_for_signature())
-    privkey = deserialize_private_key(base64.b64decode(req.private_key_b64))
+    
+    privkey_b64 = req.private_key_b64 or os.environ.get("NODE_PRIVATE_KEY_B64")
+    if not privkey_b64:
+        raise HTTPException(status_code=500, detail="Node private key not configured")
+        
+    privkey = deserialize_private_key(base64.b64decode(privkey_b64))
     signature_bytes = sign(privkey, signable_bytes)
     msg.signature = base64.b64encode(signature_bytes).decode("ascii")
 
     _MESSAGES[msg.envelope.message_id] = msg
+    _SEQ_NUMS[req.credential_id] = seq
     
     for target_id in payload.object_refs:
         if target_id not in _FEEDBACKS:
@@ -241,8 +294,17 @@ def query_indicator(pattern: str):
 
 
 @app.get("/feed")
-def get_feed():
+def get_feed(format: str = "json"):
     """Retrieve all indicators ranked by local corroboration score."""
+    from uuid import uuid4
+    
+    if format.lower() == "stix":
+        return {
+            "type": "bundle",
+            "id": f"bundle--{uuid4()}",
+            "objects": [msg.payload.model_dump() for msg in _MESSAGES.values()]
+        }
+        
     from swarmsec.node.scoring import compute_corroboration_score
 
     items = []

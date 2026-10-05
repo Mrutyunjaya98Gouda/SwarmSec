@@ -7,12 +7,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#0a0a0b',
-        surface: '#111113',
-        primary: '#3b82f6',
-        success: '#10b981',
-        danger: '#ef4444',
-        warning: '#f59e0b',
+        background: 'var(--color-background)',
+        foreground: 'var(--color-foreground)',
+        card: 'var(--color-card)',
+        border: 'var(--color-border)',
+        primary: {
+          DEFAULT: 'var(--color-primary)',
+          foreground: 'var(--color-primary-foreground)',
+        },
+        success: 'var(--color-success)',
+        destructive: 'var(--color-destructive)',
+        warning: 'var(--color-warning)',
+        info: 'var(--color-info)',
+        muted: {
+          DEFAULT: 'var(--color-muted)',
+          foreground: 'var(--color-muted-foreground)',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
