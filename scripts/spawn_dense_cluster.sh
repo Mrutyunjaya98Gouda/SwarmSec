@@ -17,10 +17,12 @@
 set -euo pipefail
 
 NODE_URL="${1:-http://localhost:8001}"
-NUM_COLLUDERS="${2:-4}"
+REGISTRAR_URL="${2:-http://localhost:8000}"
+NUM_COLLUDERS="${3:-4}"
 
 echo "=== SwarmSec Dense Cluster Attack ==="
 echo "Target node: ${NODE_URL}"
+echo "Registrar: ${REGISTRAR_URL}"
 echo "Colluding pseudonyms: ${NUM_COLLUDERS}"
 echo ""
 
@@ -30,7 +32,7 @@ CRED_IDS=()
 PRIVKEYS=()
 
 for i in $(seq 1 "${NUM_COLLUDERS}"); do
-    RESULT=$(curl -s "${NODE_URL}/register" \
+    RESULT=$(curl -s "${REGISTRAR_URL}/register" \
         -H "Content-Type: application/json" \
         -d "{\"org_id\": \"colluder_${i}\"}" 2>/dev/null || echo '{"error":"registration not available"}')
     

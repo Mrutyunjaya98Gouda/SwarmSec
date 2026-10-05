@@ -1,13 +1,15 @@
 """Tests for peer-side gossip verification."""
 
 import base64
-import json
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import Response
 
-from swarmsec.crypto.keys import generate_keypair, serialize_public_key, sign, serialize_private_key
+from swarmsec.crypto.keys import (
+    generate_keypair,
+    serialize_public_key,
+    sign,
+)
 from swarmsec.node.models import (
     SignableEnvelopeFields,
     StixIndicator,
@@ -15,8 +17,8 @@ from swarmsec.node.models import (
     SwarmSecMessage,
     TLPMarking,
 )
-from swarmsec.registrar.credential import issue_credential
 from swarmsec.node.verify import MessageVerifier
+from swarmsec.registrar.credential import issue_credential
 
 
 @pytest.fixture
@@ -64,8 +66,6 @@ def anyio_backend():
 def _build_mock_verifier(pseudonym_b64_pub: str, registrar_priv, registrar_pub,
                          credential_id: str = "test-cred-123") -> MessageVerifier:
     """Build a MessageVerifier with a properly signed credential in the mock log."""
-    from swarmsec.registrar.credential import issue_credential
-    from swarmsec.crypto.keys import deserialize_public_key, serialize_public_key
 
     cred = issue_credential(pseudonym_b64_pub, registrar_priv)
     cred.credential_id = credential_id

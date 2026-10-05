@@ -10,9 +10,10 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from swarmsec.node.models import SwarmSecMessage, StixIndicator, SignableEnvelopeFields
+from swarmsec.node.models import SignableEnvelopeFields, StixIndicator, SwarmSecMessage
 from swarmsec.node.verify import MessageVerifier
 
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +43,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SwarmSec Node", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class PublishRequest(BaseModel):
@@ -106,8 +115,9 @@ async def receive_gossip(message: SwarmSecMessage):
 async def publish_local(req: PublishRequest):
     """Originate a new message from this node."""
     import base64
-    from swarmsec.crypto.keys import deserialize_private_key, sign
+
     from swarmsec.crypto.canonicalize import canonicalize
+    from swarmsec.crypto.keys import deserialize_private_key, sign
     from swarmsec.node.models import TLPMarking
 
     # Create payload
@@ -151,9 +161,10 @@ async def publish_local(req: PublishRequest):
 async def publish_feedback(req: PublishFeedbackRequest):
     """Originate a new feedback (Opinion) message from this node."""
     import base64
-    from swarmsec.crypto.keys import deserialize_private_key, sign
+
     from swarmsec.crypto.canonicalize import canonicalize
-    from swarmsec.node.models import TLPMarking, StixOpinion
+    from swarmsec.crypto.keys import deserialize_private_key, sign
+    from swarmsec.node.models import StixOpinion, TLPMarking
 
     payload = StixOpinion(
         opinion=req.opinion,
@@ -269,6 +280,7 @@ def get_feed():
             "first_seen": first_msg.envelope.timestamp,
             "last_seen": latest_msg.envelope.timestamp,
             "sources": message_ids,
+            "identities": list(set([m.envelope.credential_id for m in messages])),
         }
         items.append(item)
 

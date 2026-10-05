@@ -7,8 +7,8 @@ flags for correlated-evidence down-weighting.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from rich.console import Console, Group
@@ -24,7 +24,7 @@ MANDATORY_ADVISORY_DISCLAIMER = (
 )
 
 
-def fetch_node_feed(node_url: str, timeout: float = 3.0) -> Optional[Dict[str, Any]]:
+def fetch_node_feed(node_url: str, timeout: float = 3.0) -> dict[str, Any] | None:
     """Fetch current ranked feed from the node."""
     try:
         url = node_url.rstrip("/") + "/feed"
@@ -37,10 +37,10 @@ def fetch_node_feed(node_url: str, timeout: float = 3.0) -> Optional[Dict[str, A
 
 
 def generate_dashboard_renderable(
-    node_url: str, feed_data: Optional[Dict[str, Any]]
+    node_url: str, feed_data: dict[str, Any] | None
 ) -> Group:
     """Build the Rich renderable group for the dashboard."""
-    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    now_utc = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")
 
     # Header Panel
     header_text = Text()
@@ -71,11 +71,11 @@ def generate_dashboard_renderable(
     table.add_column("Sources", justify="center", width=9)
     table.add_column("Down-Weighting Status", justify="center", width=22)
 
-    indicators: List[Dict[str, Any]] = (
+    indicators: list[dict[str, Any]] = (
         feed_data.get("ranked_indicators", []) if feed_data else []
     )
 
-    downweighted_items: List[Dict[str, Any]] = []
+    downweighted_items: list[dict[str, Any]] = []
 
     if not indicators:
         table.add_row(
@@ -161,7 +161,7 @@ def generate_dashboard_renderable(
     return Group(*panels)
 
 
-def render_dashboard_once(node_url: str, console: Optional[Console] = None) -> None:
+def render_dashboard_once(node_url: str, console: Console | None = None) -> None:
     """Print the dashboard once to stdout."""
     c = console or Console()
     feed_data = fetch_node_feed(node_url)
@@ -172,8 +172,8 @@ def render_dashboard_once(node_url: str, console: Optional[Console] = None) -> N
 def run_live_dashboard(
     node_url: str,
     refresh_rate: float = 1.0,
-    max_iterations: Optional[int] = None,
-    console: Optional[Console] = None,
+    max_iterations: int | None = None,
+    console: Console | None = None,
 ) -> None:
     """Run interactive live dashboard."""
     c = console or Console()

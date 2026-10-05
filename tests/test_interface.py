@@ -1,6 +1,5 @@
 """Tests for Sprint 5 — Advisory CLI outputs, /feed endpoint, and live dashboard."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +9,12 @@ from fastapi.testclient import TestClient
 from swarmsec.cli.dashboard import generate_dashboard_renderable, render_dashboard_once
 from swarmsec.cli.main import ADVISORY_DISCLAIMER, cli
 from swarmsec.node.app import app as node_app
-from swarmsec.node.models import SignableEnvelopeFields, StixIndicator, StixOpinion, SwarmSecMessage, TLPMarking
+from swarmsec.node.models import (
+    SignableEnvelopeFields,
+    StixIndicator,
+    SwarmSecMessage,
+    TLPMarking,
+)
 
 
 @pytest.fixture

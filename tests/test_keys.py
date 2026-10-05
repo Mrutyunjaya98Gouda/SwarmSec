@@ -1,7 +1,6 @@
 """Tests for swarmsec.crypto.keys — Ed25519 keypair generation, signing, verification."""
 
 import tempfile
-from pathlib import Path
 
 from swarmsec.crypto.keys import (
     deserialize_public_key,

@@ -9,21 +9,17 @@ Sprint 4 — these tests verify:
    (or documentation of findings if they do)
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
 
+from swarmsec.node.feedback_graph import build_endorsement_graph, get_feedback_weight
 from swarmsec.node.models import (
     SignableEnvelopeFields,
-    StixExternalReference,
     StixIndicator,
     StixOpinion,
     SwarmSecMessage,
     TLPMarking,
 )
-from swarmsec.node.feedback_graph import build_endorsement_graph, get_feedback_weight
 from swarmsec.node.scoring import compute_corroboration_score
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,7 +27,7 @@ from swarmsec.node.scoring import compute_corroboration_score
 
 def _make_indicator(credential_id: str, pattern: str, minutes_offset: int = 0) -> SwarmSecMessage:
     """Create a signed indicator message."""
-    ts = (datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
+    ts = (datetime.now(UTC) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
     payload = StixIndicator(
         pattern=pattern,
         object_marking_refs=[TLPMarking.GREEN],
@@ -48,7 +44,7 @@ def _make_indicator(credential_id: str, pattern: str, minutes_offset: int = 0) -
 def _make_opinion(credential_id: str, indicator_ids: list, opinion: str = "agree",
                   minutes_offset: int = 0) -> SwarmSecMessage:
     """Create a signed opinion (feedback) message."""
-    ts = (datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
+    ts = (datetime.now(UTC) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
     payload = StixOpinion(
         opinion=opinion,
         object_refs=indicator_ids,

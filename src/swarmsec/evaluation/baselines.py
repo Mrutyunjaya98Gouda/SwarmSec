@@ -18,10 +18,7 @@ Sprint 4 attack scenarios and legitimate scenarios.
 
 from __future__ import annotations
 
-from typing import Dict, List
-
 from swarmsec.node.models import SwarmSecMessage
-
 
 # ---------------------------------------------------------------------------
 # Baseline 1 — Quorum / majority-vote
@@ -43,7 +40,7 @@ class QuorumScorer:
     def __init__(self, quorum: int = 3) -> None:
         self.quorum = quorum
 
-    def score(self, messages: List[SwarmSecMessage]) -> dict:
+    def score(self, messages: list[SwarmSecMessage]) -> dict:
         """
         Compute the quorum result for a list of messages about one indicator.
 
@@ -105,14 +102,14 @@ class PlainReputationScorer:
         self.saturation = saturation
         self.accept_threshold = accept_threshold
         # reputation table: cred_id -> message count seen historically
-        self._history: Dict[str, int] = {}
+        self._history: dict[str, int] = {}
 
     def _reputation(self, cred_id: str) -> float:
         """Reputation score for a credential, in [0.0, 1.0]."""
         count = self._history.get(cred_id, 0)
         return min(1.0, count / self.saturation)
 
-    def observe(self, messages: List[SwarmSecMessage]) -> None:
+    def observe(self, messages: list[SwarmSecMessage]) -> None:
         """Update the reputation history from a list of messages.
 
         Call this on *all* historical messages before calling score().
@@ -121,7 +118,7 @@ class PlainReputationScorer:
             cred_id = m.envelope.credential_id
             self._history[cred_id] = self._history.get(cred_id, 0) + 1
 
-    def score(self, messages: List[SwarmSecMessage]) -> dict:
+    def score(self, messages: list[SwarmSecMessage]) -> dict:
         """
         Compute the plain-reputation result for messages about one indicator.
 

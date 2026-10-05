@@ -1,6 +1,5 @@
 """Trust scoring and corroboration logic for SwarmSec."""
 
-from typing import List
 
 from swarmsec.node.models import SwarmSecMessage
 
@@ -25,8 +24,8 @@ def get_pattern_entropy_weight(pattern: str) -> float:
 
 
 def compute_corroboration_score(
-    messages: List[SwarmSecMessage], 
-    feedbacks: List[SwarmSecMessage] = None,
+    messages: list[SwarmSecMessage], 
+    feedbacks: list[SwarmSecMessage] = None,
     all_messages: dict = None
 ) -> dict:
     """
@@ -86,23 +85,48 @@ def compute_corroboration_score(
                 
     # Process feedback (Opinions)
     if feedbacks and all_messages:
-        from swarmsec.node.feedback_graph import build_endorsement_graph, get_feedback_weight
+        from swarmsec.node.feedback_graph import (
+            build_endorsement_graph,
+            get_feedback_weight,
+        )
         graph, totals = build_endorsement_graph(all_messages)
         
-        target_cred_id = sorted_messages[0].envelope.credential_id
-        
+        # Map indicator IDs and message IDs to their creators' credential IDs
+        indicator_creators = {}
+        for m in sorted_messages:
+            indicator_creators[m.payload.id] = m.envelope.credential_id
+            indicator_creators[m.envelope.message_id] = m.envelope.credential_id
+            
         for fb in feedbacks:
             giver_id = fb.envelope.credential_id
+            
+            sentiment = 1.0
+            if fb.payload.opinion in ("disagree", "strongly-disagree"):
+                sentiment = -1.0
+            elif fb.payload.opinion == "neutral":
+                sentiment = 0.0
+            
+            # Find the actual target credential ID for this specific feedback
+            target_cred_id = None
+            for ref in fb.payload.object_refs:
+                if ref in indicator_creators:
+                    target_cred_id = indicator_creators[ref]
+                    break
+                    
+            if not target_cred_id:
+                # Fallback to first reporter if we somehow can't match it
+                target_cred_id = sorted_messages[0].envelope.credential_id
+                
             if giver_id == target_cred_id or giver_id in seen_credentials:
                 continue
                 
             weight = get_feedback_weight(giver_id, target_cred_id, graph, totals)
-            if weight > 0:
+            if weight > 0 and sentiment != 0.0:
                 seen_credentials.add(giver_id)
-                independent_sources_count += 1
+                independent_sources_count += (1 if sentiment > 0 else 0)
                 
                 # Feedback weight depends on the entropy of the indicator and the graph penalty
-                score += (entropy_weight * weight)
+                score += (entropy_weight * weight * sentiment)
                 if weight < 1.0:
                     flags.add("feedback_downweighted")
                 

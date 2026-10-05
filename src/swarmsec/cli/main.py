@@ -10,13 +10,11 @@ Provides commands for:
 import base64
 import json
 import sys
-from pathlib import Path
 
 import click
 import httpx
 
 from swarmsec.crypto.keys import (
-    deserialize_public_key,
     generate_keypair,
     load_private_key,
     load_public_key,
@@ -36,7 +34,6 @@ ADVISORY_DISCLAIMER = (
 @click.group()
 def cli():
     """SwarmSec Command Line Interface."""
-    pass
 
 
 @cli.command()
@@ -45,7 +42,7 @@ def keygen(out):
     """Generate a new Ed25519 pseudonym keypair."""
     priv, pub = generate_keypair()
     priv_path, pub_path = save_keypair(priv, out)
-    click.echo(f"Generated keypair:")
+    click.echo("Generated keypair:")
     click.echo(f"  Private: {priv_path}")
     click.echo(f"  Public:  {pub_path}")
 
@@ -164,7 +161,7 @@ def submit(node, credential, key, pattern):
         sys.exit(1)
 
     res = resp.json()
-    click.secho(f"Indicator published successfully.", fg="green")
+    click.secho("Indicator published successfully.", fg="green")
     click.echo(f"  Message ID: {res.get('message_id')}")
     click.echo(f"  Pattern:    {pattern}")
     click.secho(f"\n{ADVISORY_DISCLAIMER}", fg="yellow")
@@ -208,7 +205,7 @@ def feedback(node, credential, key, indicator_id, opinion):
         sys.exit(1)
 
     res = resp.json()
-    click.secho(f"Feedback published successfully.", fg="green")
+    click.secho("Feedback published successfully.", fg="green")
     click.echo(f"  Message ID:   {res.get('message_id')}")
     click.echo(f"  Target ID:    {indicator_id}")
     click.echo(f"  Verdict:      {opinion}")

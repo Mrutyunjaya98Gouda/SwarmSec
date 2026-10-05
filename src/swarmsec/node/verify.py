@@ -3,10 +3,8 @@
 import base64
 import json
 import logging
-from typing import Tuple
 
 import httpx
-from cryptography.exceptions import InvalidSignature
 
 from swarmsec.crypto.keys import deserialize_public_key, verify
 from swarmsec.node.models import SwarmSecMessage
@@ -77,7 +75,7 @@ class MessageVerifier:
 
         return result
 
-    async def verify(self, message: SwarmSecMessage) -> Tuple[bool, str]:
+    async def verify(self, message: SwarmSecMessage) -> tuple[bool, str]:
         """
         Verify an incoming gossip message.
 

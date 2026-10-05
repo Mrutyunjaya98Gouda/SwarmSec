@@ -9,13 +9,12 @@ Terminology per AGENTS.md:
   - "Credentialed collusion resistance," not "Sybil resistance."
 """
 
-from typing import Dict, List, Set, Tuple
 from swarmsec.node.models import SwarmSecMessage
 
 
 def build_endorsement_graph(
-    all_messages: Dict[str, SwarmSecMessage]
-) -> Tuple[Dict[str, Dict[str, int]], Dict[str, int]]:
+    all_messages: dict[str, SwarmSecMessage]
+) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
     """
     Builds a directed graph of who endorsed whom.
 
@@ -23,11 +22,11 @@ def build_endorsement_graph(
       graph: giver_cred -> (target_cred -> count)
       totals: giver_cred -> total_endorsements_given
     """
-    graph: Dict[str, Dict[str, int]] = {}
-    totals: Dict[str, int] = {}
+    graph: dict[str, dict[str, int]] = {}
+    totals: dict[str, int] = {}
 
     # First, map indicator IDs to their creator's credential ID
-    indicator_creators: Dict[str, str] = {}
+    indicator_creators: dict[str, str] = {}
     for msg in all_messages.values():
         if msg.payload.type == "indicator":
             indicator_creators[msg.payload.id] = msg.envelope.credential_id
@@ -53,7 +52,7 @@ def build_endorsement_graph(
 def _get_cluster_density(
     giver_cred: str,
     target_cred: str,
-    graph: Dict[str, Dict[str, int]],
+    graph: dict[str, dict[str, int]],
 ) -> float:
     """
     Measure how densely the giver's endorsement targets form a mutual cluster
@@ -67,7 +66,7 @@ def _get_cluster_density(
       - 0.0: none of the giver's other endorsees also endorse the target
       - 1.0: all of the giver's other endorsees also endorse the target (dense cluster)
     """
-    giver_targets: Set[str] = set(graph.get(giver_cred, {}).keys())
+    giver_targets: set[str] = set(graph.get(giver_cred, {}).keys())
     if len(giver_targets) <= 1:
         # Only one endorsement target: can't measure cluster density from graph structure alone
         # Fall back to mutual-endorsement check only
@@ -90,8 +89,8 @@ def _get_cluster_density(
 def get_feedback_weight(
     giver_cred: str,
     target_cred: str,
-    graph: Dict[str, Dict[str, int]],
-    totals: Dict[str, int],
+    graph: dict[str, dict[str, int]],
+    totals: dict[str, int],
 ) -> float:
     """
     Computes the weight of feedback from giver_cred toward target_cred.

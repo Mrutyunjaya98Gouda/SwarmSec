@@ -1,8 +1,9 @@
 """Tests for the FastAPI registrar service."""
 
 import base64
-from fastapi.testclient import TestClient
+
 import pytest
+from fastapi.testclient import TestClient
 
 from swarmsec.crypto.keys import generate_keypair, serialize_public_key
 from swarmsec.registrar.app import app
@@ -74,10 +75,10 @@ def test_log_verify():
 def test_registrar_key_persists_across_restarts(tmp_path, monkeypatch, pseudo_pubkey_b64):
     import importlib
     import json
-    import swarmsec.registrar.app as app_module
+
     from fastapi.testclient import TestClient
-    from swarmsec.registrar.models import Credential
-    from swarmsec.crypto.keys import deserialize_public_key
+
+    import swarmsec.registrar.app as app_module
 
     key_file = tmp_path / "registrar.key"
     log_file = tmp_path / "log.jsonl"

@@ -1,10 +1,8 @@
 """Tests for swarmsec.registrar.credential."""
 
 import base64
-from datetime import datetime, timedelta, timezone
 
-from swarmsec.crypto.canonicalize import canonicalize
-from swarmsec.crypto.keys import generate_keypair, serialize_public_key, sign
+from swarmsec.crypto.keys import generate_keypair, serialize_public_key
 from swarmsec.registrar.credential import (
     is_credential_expired,
     issue_credential,

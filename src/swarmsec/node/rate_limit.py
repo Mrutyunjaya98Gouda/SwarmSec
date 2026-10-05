@@ -2,7 +2,6 @@
 
 import time
 from collections import defaultdict
-from typing import Set
 
 # Epoch configuration
 EPOCH_DURATION_SECONDS = 60
@@ -20,7 +19,7 @@ class RateLimiter:
         # Persistent set of message_ids already processed (replay prevention).
         # Cleared only when exceeding SEEN_IDS_MAX_SIZE (oldest-first not tracked;
         # a full reset on overflow is a documented simplification for demo scale).
-        self._seen_message_ids: Set[str] = set()
+        self._seen_message_ids: set[str] = set()
 
     def _get_current_epoch(self) -> int:
         return int(time.time() // EPOCH_DURATION_SECONDS)

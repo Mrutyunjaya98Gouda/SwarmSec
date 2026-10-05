@@ -16,6 +16,7 @@ The key assertions per the Sprint 6 spec:
 """
 
 import pytest
+
 from swarmsec.evaluation.baselines import PlainReputationScorer, QuorumScorer
 from swarmsec.evaluation.harness import (
     build_dense_cluster_attack,
@@ -30,7 +31,6 @@ from swarmsec.evaluation.harness import (
     run_evaluation,
 )
 from swarmsec.node.scoring import compute_corroboration_score
-
 
 # ---------------------------------------------------------------------------
 # QuorumScorer tests
@@ -261,7 +261,6 @@ class TestSwarmSecVsBaselines:
 
         See NOTES.md for the full documented finding.
         """
-        from swarmsec.node.models import StixExternalReference
         # Model the attack correctly: one initial reporter, then cluster endorses
         pattern = "[ipv4-addr:value = '10.0.0.1']"
         first_reporter_cred = "cred-victim-org"

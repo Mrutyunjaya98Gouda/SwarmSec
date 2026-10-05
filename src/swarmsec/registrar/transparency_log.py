@@ -22,7 +22,6 @@ from typing import Any
 from swarmsec.crypto.canonicalize import canonicalize
 from swarmsec.registrar.models import TransparencyLogEntry
 
-
 # Genesis "previous hash" — 64 hex zeros
 GENESIS_PREV_HASH = "0" * 64
 

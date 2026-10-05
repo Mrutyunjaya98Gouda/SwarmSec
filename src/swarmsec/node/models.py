@@ -1,9 +1,9 @@
 """Pydantic models for SwarmSec node messages and STIX 2.1 objects."""
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -21,33 +21,33 @@ class TLPMarking(str, Enum):
 class StixExternalReference(BaseModel):
     """External reference for STIX objects, used for independence checking."""
     source_name: str
-    url: Optional[str] = None
-    external_id: Optional[str] = None
+    url: str | None = None
+    external_id: str | None = None
 
 
 class StixIndicator(BaseModel):
     """A minimal STIX 2.1 Indicator object."""
     type: str = "indicator"
     id: str = Field(default_factory=lambda: f"indicator--{uuid4()}")
-    created: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
-    modified: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
-    name: Optional[str] = None
+    created: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
+    modified: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
+    name: str | None = None
     pattern: str  # e.g., "[ipv4-addr:value = '198.51.100.1']"
     pattern_type: str = "stix"
-    valid_from: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
-    object_marking_refs: List[TLPMarking]
-    external_references: List[StixExternalReference] = Field(default_factory=list)
+    valid_from: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
+    object_marking_refs: list[TLPMarking]
+    external_references: list[StixExternalReference] = Field(default_factory=list)
 
 
 class StixOpinion(BaseModel):
     """A minimal STIX 2.1 Opinion object for feedback."""
     type: str = "opinion"
     id: str = Field(default_factory=lambda: f"opinion--{uuid4()}")
-    created: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
-    modified: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    created: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
+    modified: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
     opinion: str  # "strongly-agree", "agree", "neutral", "disagree", "strongly-disagree"
-    object_refs: List[str]  # IDs of the Indicators being opined on
-    object_marking_refs: List[TLPMarking]
+    object_refs: list[str]  # IDs of the Indicators being opined on
+    object_marking_refs: list[TLPMarking]
 
 
 # -------------------------------------------------------------------------
@@ -58,11 +58,11 @@ class SignableEnvelopeFields(BaseModel):
     """The fields of the envelope that are canonicalized and signed."""
     credential_id: str
     sequence_number: int
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + "Z")
+    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat() + "Z")
     message_id: str = Field(default_factory=lambda: str(uuid4()))
     payload_hash: str  # SHA-256 of the canonicalized STIX payload
 
-    def model_dump_for_signature(self) -> Dict[str, Any]:
+    def model_dump_for_signature(self) -> dict[str, Any]:
         """Return a dictionary ready for RFC 8785 canonicalization."""
         return self.model_dump(mode="json")
 

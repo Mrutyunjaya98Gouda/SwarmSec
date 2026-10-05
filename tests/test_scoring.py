@@ -1,7 +1,6 @@
 """Tests for trust scoring and corroboration."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from swarmsec.node.models import (
     SignableEnvelopeFields,
@@ -10,7 +9,10 @@ from swarmsec.node.models import (
     SwarmSecMessage,
     TLPMarking,
 )
-from swarmsec.node.scoring import compute_corroboration_score, get_pattern_entropy_weight
+from swarmsec.node.scoring import (
+    compute_corroboration_score,
+    get_pattern_entropy_weight,
+)
 
 
 def create_message(
@@ -19,7 +21,7 @@ def create_message(
     minutes_offset: int = 0,
     feed_url: str = None
 ) -> SwarmSecMessage:
-    ts = (datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
+    ts = (datetime.now(UTC) + timedelta(minutes=minutes_offset)).isoformat() + "Z"
     
     ext_refs = []
     if feed_url:

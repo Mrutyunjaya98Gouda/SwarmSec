@@ -4,11 +4,10 @@ Registration is gated by this allowlist rather than a real KYC process.
 This is a stated simplification for demo purposes (see NOTES.md).
 """
 
-from typing import Set
 
 # For the demo, we hardcode the allowed organizations.
 # In a real deployment, this would be a database table or config file.
-_ALLOWED_ORGS: Set[str] = {
+_ALLOWED_ORGS: set[str] = {
     "org-a",
     "org-b",
     "org-c",

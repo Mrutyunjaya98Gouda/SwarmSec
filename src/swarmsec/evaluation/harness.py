@@ -15,9 +15,7 @@ win.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from swarmsec.evaluation.baselines import PlainReputationScorer, QuorumScorer
@@ -30,7 +28,6 @@ from swarmsec.node.models import (
 )
 from swarmsec.node.scoring import compute_corroboration_score
 
-
 # ---------------------------------------------------------------------------
 # Helpers to build synthetic messages without a live registrar
 # ---------------------------------------------------------------------------
@@ -42,7 +39,7 @@ def make_indicator(
     pattern: str,
     credential_id: str,
     seq: int,
-    external_url: Optional[str] = None,
+    external_url: str | None = None,
 ) -> SwarmSecMessage:
     """Build a synthetic SwarmSecMessage carrying a STIX Indicator.
 
@@ -105,7 +102,7 @@ _make_opinion = make_opinion
 def build_legitimate_scenario(
     num_independent_reporters: int = 5,
     pattern: str = "[file:hashes.'SHA-256' = 'abc123']",
-) -> Tuple[List[SwarmSecMessage], dict]:
+) -> tuple[list[SwarmSecMessage], dict]:
     """
     Legitimate scenario: N independent credentialed orgs each report the same
     indicator from first-hand observation (no shared external reference).
@@ -126,7 +123,7 @@ def build_legitimate_scenario(
 def build_dense_cluster_attack(
     cluster_size: int = 6,
     pattern: str = "[ipv4-addr:value = '10.0.0.1']",
-) -> Tuple[List[SwarmSecMessage], dict]:
+) -> tuple[list[SwarmSecMessage], dict]:
     """
     Dense-cluster attack (Sprint 4 scenario 1): a tight cluster of pseudonyms
     all report the same poisoned indicator AND mutually endorse each other.
@@ -136,7 +133,7 @@ def build_dense_cluster_attack(
     Returns (indicator_messages, metadata_with_feedbacks_and_all_messages).
     """
     creds = [f"cred-cluster-{i}" for i in range(cluster_size)]
-    indicator_messages: List[SwarmSecMessage] = []
+    indicator_messages: list[SwarmSecMessage] = []
     all_msgs: dict = {}
 
     # Each cluster member reports the poisoned indicator
@@ -146,7 +143,7 @@ def build_dense_cluster_attack(
         all_msgs[msg.envelope.message_id] = msg
 
     # Each member endorses all others (dense mutual endorsement)
-    feedbacks: List[SwarmSecMessage] = []
+    feedbacks: list[SwarmSecMessage] = []
     seq = 2
     for giver in creds:
         for target_msg in indicator_messages:
@@ -163,7 +160,7 @@ def build_staggered_cluster_attack(
     cluster_size: int = 6,
     endorsement_fraction: float = 0.4,
     pattern: str = "[domain-name:value = 'evil.example']",
-) -> Tuple[List[SwarmSecMessage], dict]:
+) -> tuple[list[SwarmSecMessage], dict]:
     """
     Staggered-cluster attack (Sprint 4 scenario 2): same cluster, but only a
     fraction of members endorse each other (sparser graph, less detectable).
@@ -174,7 +171,7 @@ def build_staggered_cluster_attack(
     random.seed(42)  # deterministic for reproducible evaluation
 
     creds = [f"cred-stagger-{i}" for i in range(cluster_size)]
-    indicator_messages: List[SwarmSecMessage] = []
+    indicator_messages: list[SwarmSecMessage] = []
     all_msgs: dict = {}
 
     for cred in creds:
@@ -182,7 +179,7 @@ def build_staggered_cluster_attack(
         indicator_messages.append(msg)
         all_msgs[msg.envelope.message_id] = msg
 
-    feedbacks: List[SwarmSecMessage] = []
+    feedbacks: list[SwarmSecMessage] = []
     seq = 2
     for i, giver in enumerate(creds):
         for j, target_msg in enumerate(indicator_messages):
@@ -200,7 +197,7 @@ def build_staggered_cluster_attack(
 def build_dense_cluster_endorsement_boost(
     cluster_size: int = 6,
     pattern: str = "[file:hashes.'SHA-256' = 'evilhash123']",
-) -> Tuple[List[SwarmSecMessage], dict]:
+) -> tuple[list[SwarmSecMessage], dict]:
     """
     Dense-cluster endorsement-boost attack (the attack model for the feedback pathway).
 
@@ -228,7 +225,7 @@ def build_dense_cluster_endorsement_boost(
         all_msgs[ci.envelope.message_id] = ci
 
     # Dense mutual endorsements among cluster members
-    feedbacks: List[SwarmSecMessage] = []
+    feedbacks: list[SwarmSecMessage] = []
     seq = 2
     for giver in cluster_creds:
         for target_cred, target_ci in cluster_indicators.items():
@@ -254,9 +251,9 @@ def build_dense_cluster_endorsement_boost(
 # ---------------------------------------------------------------------------
 
 def measure_tta(
-    messages: List[SwarmSecMessage],
+    messages: list[SwarmSecMessage],
     scorer_fn,
-) -> Optional[int]:
+) -> int | None:
     """
     Measure how many indicator messages must arrive before scorer_fn accepts.
 
@@ -283,7 +280,7 @@ class ScenarioResult:
     details: dict = field(default_factory=dict)
 
 
-def run_evaluation() -> List[ScenarioResult]:
+def run_evaluation() -> list[ScenarioResult]:
     """
     Run all three scorers across all scenarios. Return raw results.
 
@@ -305,7 +302,7 @@ def run_evaluation() -> List[ScenarioResult]:
       B. Quorum (threshold=3)
       C. PlainReputation (accept_threshold=2.0, saturation=10)
     """
-    results: List[ScenarioResult] = []
+    results: list[ScenarioResult] = []
 
     # Build scenarios
     legit_msgs, legit_meta = build_legitimate_scenario(num_independent_reporters=5)
@@ -369,7 +366,7 @@ def run_evaluation() -> List[ScenarioResult]:
     return results
 
 
-def compute_far(results: List[ScenarioResult]) -> Dict[str, float]:
+def compute_far(results: list[ScenarioResult]) -> dict[str, float]:
     """
     False-acceptance rate for each method across attack scenarios.
 
@@ -385,13 +382,13 @@ def compute_far(results: List[ScenarioResult]) -> Dict[str, float]:
         "staggered_cluster_attack",
         "dense_cluster_endorsement_boost",
     }
-    attack_results: Dict[str, List[bool]] = {}
+    attack_results: dict[str, list[bool]] = {}
 
     for r in results:
         if r.scenario_name in attack_names:
             attack_results.setdefault(r.method, []).append(r.accepted)
 
-    far: Dict[str, float] = {}
+    far: dict[str, float] = {}
     for method, acceptances in attack_results.items():
         far[method] = sum(acceptances) / len(acceptances) if acceptances else 0.0
 
@@ -399,10 +396,10 @@ def compute_far(results: List[ScenarioResult]) -> Dict[str, float]:
 
 
 def compute_tta(
-    messages: List[SwarmSecMessage],
+    messages: list[SwarmSecMessage],
     all_messages: dict,
-    feedbacks: List[SwarmSecMessage],
-) -> Dict[str, Optional[int]]:
+    feedbacks: list[SwarmSecMessage],
+) -> dict[str, int | None]:
     """
     Time-to-acceptance (TTA) for the legitimate scenario.
 

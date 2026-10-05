@@ -11,7 +11,7 @@ signs with ordinary Ed25519. No blind signatures.
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -24,7 +24,6 @@ from swarmsec.registrar.models import (
     Credential,
     CredentialStatusUpdate,
 )
-
 
 # Default credential validity: 365 days
 DEFAULT_VALIDITY_DAYS = 365
@@ -49,7 +48,7 @@ def issue_credential(
     Returns:
         A signed Credential.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(days=validity_days)
 
     cred = Credential(
@@ -110,7 +109,7 @@ def update_status(
     Returns:
         A signed CredentialStatusUpdate.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     update = CredentialStatusUpdate(
         credential_id=credential_id,
@@ -156,4 +155,4 @@ def is_credential_expired(credential: Credential) -> bool:
     if not credential.expires_at:
         return False
     expires = datetime.fromisoformat(credential.expires_at)
-    return datetime.now(timezone.utc) > expires
+    return datetime.now(UTC) > expires

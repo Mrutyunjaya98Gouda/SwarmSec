@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: hsl(0 0% 2%);
+  --color-foreground: hsl(0 0% 88%);
+
+  --color-card: hsl(0 0% 4%);
+  --color-border: hsl(350 30% 12%);
+
+  --color-primary: hsl(350 82% 25%); /* Wine Red */
+  --color-primary-foreground: hsl(0 0% 100%);
+
+  --color-success: hsl(160 100% 40%);
+  --color-destructive: hsl(0 100% 60%);
+  --color-warning: hsl(45 100% 50%);
+  --color-info: hsl(195 100% 50%);
+
+  --color-muted: hsl(0 0% 8%);
+  --color-muted-foreground: hsl(0 0% 55%);
+
+  --font-sans: "Inter", sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(
+        ellipse at top left,
+        hsl(350 82% 15% / 0.12) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse at bottom right,
+        hsl(350 70% 10% / 0.15) 0%,
+        transparent 50%
+      ),
+      linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 1%) 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .text-glow {
+    text-shadow: 0 0 20px hsl(350 82% 25% / 0.5);
+  }
+
+  .glass-card {
+    background-color: hsl(0 0% 4% / 0.5);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--color-border);
+  }
+
+  .cyber-button {
+    background: linear-gradient(
+      135deg,
+      hsl(350 82% 25%) 0%,
+      hsl(350 85% 18%) 100%
+    );
+    color: white;
+    box-shadow:
+      0 0 20px hsl(350 82% 25% / 0.3),
+      inset 0 1px 0 hsl(350 82% 40% / 0.3);
+    transition: all 0.2s ease-in-out;
+    border: none;
+  }
+
+  .cyber-button:hover {
+    background: linear-gradient(
+      135deg,
+      hsl(350 82% 30%) 0%,
+      hsl(350 85% 22%) 100%
+    );
+    box-shadow:
+      0 0 30px hsl(350 82% 25% / 0.5),
+      inset 0 1px 0 hsl(350 82% 45% / 0.4);
+  }
+
+  .nav-active {
+    color: var(--color-foreground);
+    position: relative;
+  }
+
+  .nav-active::after {
+    content: "";
+    position: absolute;
+    bottom: -16px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--color-primary);
+    box-shadow: 0 0 10px var(--color-primary);
+  }
+}

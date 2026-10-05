@@ -9,8 +9,7 @@ per AGENTS.md, not an oversight to "fix" with blind signatures.
 
 from __future__ import annotations
 
-import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
@@ -19,7 +18,7 @@ from pydantic import BaseModel, Field
 
 def _utcnow() -> datetime:
     """Return the current UTC time (timezone-aware)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _new_credential_id() -> str:
