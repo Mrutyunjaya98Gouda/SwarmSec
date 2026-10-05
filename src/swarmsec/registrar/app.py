@@ -40,9 +40,22 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     global _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY, _TRANSPARENCY_LOG
     
-    # Generate a fresh keypair for the registrar on startup
-    # In production, this would be loaded from secure storage (e.g., HSM)
-    _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY = generate_keypair()
+    key_file = os.environ.get("SWARMSEC_REGISTRAR_KEY_FILE", "registrar.key")
+    if os.path.exists(key_file):
+        from swarmsec.crypto.keys import load_private_key
+        _REGISTRAR_PRIVATE_KEY = load_private_key(key_file)
+        _REGISTRAR_PUBLIC_KEY = _REGISTRAR_PRIVATE_KEY.public_key()
+    else:
+        from swarmsec.crypto.keys import save_keypair
+        _REGISTRAR_PRIVATE_KEY, _REGISTRAR_PUBLIC_KEY = generate_keypair()
+        dir_name = os.path.dirname(key_file) or "."
+        base_name = os.path.basename(key_file)
+        save_keypair(
+            _REGISTRAR_PRIVATE_KEY, 
+            directory=dir_name, 
+            private_name=base_name, 
+            public_name=base_name + ".pub"
+        )
     
     # Initialize the transparency log (in-memory for tests, or file-backed if configured)
     log_file = os.environ.get("SWARMSEC_LOG_FILE")
@@ -90,7 +103,7 @@ def register(request: RegistrationRequest):
     cred = issue_credential(request.pseudonym_public_key, _REGISTRAR_PRIVATE_KEY)
     
     # Append to transparency log
-    log_entry = _TRANSPARENCY_LOG.append(cred.signable_fields())
+    log_entry = _TRANSPARENCY_LOG.append(cred.model_dump(mode="json"))
     
     return RegistrationResponse(credential=cred, log_entry=log_entry)
 

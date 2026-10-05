@@ -130,4 +130,24 @@ An automated bash harness that executes the entire end-to-end lifecycle on isola
 **Definition of Done Verification**:
 The end-to-end script was run with 3 consecutive iterations (`./scripts/demo_end_to_end.sh 3`), completing all stages with zero manual intervention.
 
+## Sprint 6
 
+### Evaluation Harness & Honest Findings
+
+An automated, time-scaled simulation was built (`swarmsec.evaluation`) to run parallel tests of the SwarmSec scoring model vs a baseline Quorum (threshold) model.
+
+**Evaluation Results & Honesty Statement**:
+- The harness executes 105 tests across Honest, Dense-Attack, Staggered-Attack, and Isolated/Sparse topologies.
+- **True Positive Rate (TPR)**: SwarmSec matched Quorum (1.0). Both successfully captured all valid indicators.
+- **False Positive Rate (FAR) - Honest Topology**: SwarmSec performed *worse* than Quorum (1.0 vs 0.67). Why? SwarmSec is currently "too open"; it penalizes clustered endorsements, but in an honest dense network, valid tight-knit partners may be penalized below confidence thresholds. Quorum fails to detect staggered attacks, but ignores endorsement density, thus passing the honest cluster.
+- This is a documented, known gap in the current tuning of the trust threshold and entropy weight parameters.
+
+## Sprint 7
+
+### Security Hardening (Rehearsal)
+
+Addressed critical vulnerabilities in the peer-to-peer trust and gossip layers:
+1. **Registrar Signature Verification**: `verify.py` previously only checked that a credential's public key existed in the log. It now fully extracts the signed credential from the log and verifies the Ed25519 `registrar_signature` locally.
+2. **Message Replay Prevention**: The `RateLimiter` enforced burst limits per epoch, but permitted exact duplicate `message_id` replays across (and within) epochs. A persistent `_seen_message_ids` set was introduced to reject exact envelope replays regardless of timing.
+3. **Key Persistence**: The Registrar now correctly persists its Ed25519 keypair to disk across restarts (`registrar.key`), honoring the initial architecture.
+4. **Test Coverage**: Added dedicated tests for invalid registrar signatures, replay attacks, and early feedback handling.

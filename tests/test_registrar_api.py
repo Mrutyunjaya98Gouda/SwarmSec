@@ -70,3 +70,44 @@ def test_log_verify():
         assert response.status_code == 200
         data = response.json()
         assert data["is_valid"] is True
+
+def test_registrar_key_persists_across_restarts(tmp_path, monkeypatch, pseudo_pubkey_b64):
+    import importlib
+    import json
+    import swarmsec.registrar.app as app_module
+    from fastapi.testclient import TestClient
+    from swarmsec.registrar.models import Credential
+    from swarmsec.crypto.keys import deserialize_public_key
+
+    key_file = tmp_path / "registrar.key"
+    log_file = tmp_path / "log.jsonl"
+    monkeypatch.setenv("SWARMSEC_REGISTRAR_KEY_FILE", str(key_file))
+    monkeypatch.setenv("SWARMSEC_LOG_FILE", str(log_file))
+
+    # First "start"
+    importlib.reload(app_module)
+    with TestClient(app_module.app) as first:
+        pk1 = first.get("/pubkey").json()["public_key_b64"]
+        created = first.post(
+            "/register",
+            json={"org_id": "org-a", "pseudonym_public_key": pseudo_pubkey_b64},
+        ).json()
+        cred_id = created["credential"]["credential_id"]
+
+    # Second "start"
+    importlib.reload(app_module)
+    with TestClient(app_module.app) as second:
+        pk2 = second.get("/pubkey").json()["public_key_b64"]
+        assert pk1 == pk2  # Key persisted
+        
+        # In the current sprint-6, there is no /credential/{id} lookup endpoint,
+        # but the key persistence itself is tested above. We can verify log instead.
+        entries = second.get("/log").json()
+        assert len(entries) == 1
+        payload = json.loads(base64.b64decode(entries[0]["payload_canonical"]).decode("utf-8"))
+        assert payload["credential_id"] == cred_id
+        
+    # Restore app module state to avoid breaking other tests
+    monkeypatch.delenv("SWARMSEC_REGISTRAR_KEY_FILE", raising=False)
+    monkeypatch.delenv("SWARMSEC_LOG_FILE", raising=False)
+    importlib.reload(app_module)
