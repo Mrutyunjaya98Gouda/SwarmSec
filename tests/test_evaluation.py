@@ -396,26 +396,25 @@ class TestSwarmSecVsBaselines:
         """
         Honest comparison of FAR across all methods and scenarios.
 
-        Expected results documented here:
-          - dense_cluster_attack (multi-reporter): ALL methods accept (FAR=1.0 each)
-            because no method can distinguish 6 independent orgs from 6 cluster members
-            filing indicators without shared external_references.
-          - dense_cluster_endorsement_boost (feedback inflation): SwarmSec should
-            reject (FAR=0.0 for swarmsec) while others accept (FAR=1.0).
-
-        If this test fails, the findings are still accurate but need re-documenting.
+        DOCUMENTED FINDING:
+        - For multi-reporter attacks (dense_cluster_attack, staggered_cluster_attack),
+          ALL methods accept them (FAR=1.0 for these 2 scenarios) because none can distinguish
+          6 independent orgs from 6 cluster members filing primary indicators.
+        - For endorsement-boost attack, SwarmSec flags it (`feedback_downweighted`) and
+          reduces the score, but it still passes the naive `> 0` threshold.
+        - Quorum happens to reject endorsement-boost (FAR=0 for this scenario) NOT because
+          it detects the attack, but because it completely ignores endorsements and only sees
+          1 primary indicator (which fails quorum=3).
+          
+        Therefore, SwarmSec's overall FAR across the 3 scenarios is 1.0 (100%), while Quorum
+        and PlainReputation get 0.667 (66.7%) due to ignoring the endorsement channel.
         """
         results = run_evaluation()
         far = compute_far(results)
 
-        # SwarmSec's overall FAR should be <= quorum's FAR because it wins on
-        # endorsement-boost even when it ties on multi-reporter attacks
-        # (2/3 attack scenarios: same as quorum; 1/3: better than quorum)
-        # So SwarmSec FAR < quorum FAR
         sw_far = far.get("swarmsec", 1.0)
         q_far = far.get("quorum", 1.0)
-        assert sw_far <= q_far, (
-            f"SwarmSec FAR ({sw_far:.2%}) should be <= quorum FAR ({q_far:.2%}). "
-            f"SwarmSec detects endorsement-boost attacks that quorum misses. "
-            f"Full FAR results: {far}"
-        )
+        
+        # SwarmSec accepts all 3 (FAR 1.0) while Quorum rejects endorsement-boost (FAR ~0.667)
+        assert sw_far == 1.0, f"Expected SwarmSec FAR to be 1.0, got {sw_far}"
+        assert abs(q_far - 2/3) < 0.01, f"Expected Quorum FAR to be 0.667, got {q_far}"
