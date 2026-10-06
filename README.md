@@ -39,7 +39,7 @@ fully covers.
 |   | keypair    |      | keypair    |      | keypair    |           |
 |   | (Ed25519)  |      | (Ed25519)  |      | (Ed25519)  |           |
 |   |            |      |            |      |            |           |
-|   | gossip     | HTTP relay (or GossipSub in future)               |
+|   | gossip     | HTTP relay (or GossipSub in future)   |           |
 |   |            |      |            |      |            |           |
 |   | LOCAL trust|      | LOCAL trust|      | LOCAL trust|           |
 |   | scorer     |      | scorer     |      | scorer     |           |
