@@ -15,7 +15,7 @@ const puppeteer = require('puppeteer');
     await page.goto('http://localhost:5173', { waitUntil: 'networkidle0' });
     
     // Wait for the UI to fully render the feed
-    await page.waitForTimeout(3000); // 3 seconds to let React fetch and render
+    await new Promise(r => setTimeout(r, 3000));
     
     console.log("Taking screenshot of main dashboard...");
     await page.screenshot({ path: '/home/cyberghost9813/.gemini/antigravity-ide/brain/33760228-89f4-4bae-b093-084fea4b135a/dashboard_main.png', fullPage: true });
@@ -32,7 +32,7 @@ const puppeteer = require('puppeteer');
     }
     
     // Wait for the tab to render
-    await page.waitForTimeout(1000);
+    await new Promise(r => setTimeout(r, 1000));
     
     console.log("Taking screenshot of peer network...");
     await page.screenshot({ path: '/home/cyberghost9813/.gemini/antigravity-ide/brain/33760228-89f4-4bae-b093-084fea4b135a/dashboard_peers.png', fullPage: true });

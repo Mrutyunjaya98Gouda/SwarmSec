@@ -13,9 +13,25 @@ import {
   Network,
   MessageSquare,
   History,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  LogOut,
+  Send,
 } from "lucide-react";
 import clsx from "clsx";
 import { twMerge } from "tailwind-merge";
+import Registration from "./components/Registration";
+import PublishModal from "./components/PublishModal";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -34,6 +50,7 @@ interface FeedItem {
   last_seen: number;
   sources: string[];
   identities: string[];
+  timeline: { time: number; type: string; peer: string; score: number }[];
 }
 
 interface FeedResponse {
@@ -43,22 +60,43 @@ interface FeedResponse {
   advisory_disclaimer: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
+const API_URL = import.meta.env.VITE_API_URL || "https://localhost:8001";
 
 export default function App() {
   const [data, setData] = useState<FeedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"dashboard" | "nodes">(
-    "dashboard",
-  );
+  const [wsConnected, setWsConnected] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("ALL");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "nodes">("dashboard");
+  const [selectedIndicators, setSelectedIndicators] = useState<Set<string>>(new Set());
+  const [peerAnalytics, setPeerAnalytics] = useState<Record<string, any>>({});
+  const [auth, setAuth] = useState<{org_id: string; credential_id: string; private_key_b64: string} | null>(() => {
+    const cred = localStorage.getItem("swarmsec_auth");
+    return cred ? JSON.parse(cred) : null;
+  });
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+
+  const handleLogin = (data: {org_id: string; credential_id: string; private_key_b64: string}) => {
+    localStorage.setItem("swarmsec_auth", JSON.stringify(data));
+    setAuth(data);
+  };
+  
+  const handleLogout = () => {
+    localStorage.removeItem("swarmsec_auth");
+    setAuth(null);
+  };
 
   const fetchFeed = async () => {
     try {
       const response = await axios.get<FeedResponse>(`${API_URL}/feed`);
       setData(response.data);
       setError("");
+      
+      const peerResp = await axios.get(`${API_URL}/analytics/peers`);
+      setPeerAnalytics(peerResp.data);
     } catch (err: any) {
       setError(err.message || "Failed to fetch P2P gossip feed");
     } finally {
@@ -73,9 +111,46 @@ export default function App() {
   };
 
   useEffect(() => {
+    let ws: WebSocket;
+    
+    const connectWs = () => {
+      const wsUrl = API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/feed/stream";
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        setWsConnected(true);
+        setError("");
+        setLoading(false);
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const feedData = JSON.parse(event.data);
+          setData(feedData);
+          setLoading(false);
+        } catch (e) {
+          console.error("Failed to parse websocket message", e);
+        }
+      };
+      
+      ws.onclose = () => {
+        setWsConnected(false);
+        setTimeout(connectWs, 3000);
+      };
+      
+      ws.onerror = () => {
+        setError("WebSocket connection failed. Reconnecting...");
+      };
+    };
+    
+    connectWs();
+    
+    // Also do a fetch just in case WebSocket takes a moment
     fetchFeed();
-    const interval = setInterval(fetchFeed, 3000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      if (ws) ws.close();
+    };
   }, []);
 
   // Compute active nodes dynamically from sources
@@ -107,6 +182,67 @@ export default function App() {
   const totalFeedbackCount =
     data?.ranked_indicators.reduce((acc, i) => acc + i.feedback_count, 0) ?? 0;
 
+  // Threat Hunting DSL Parser
+  const parseQueryDSL = (item: FeedItem, query: string) => {
+    if (!query) return true;
+    
+    // Very simple Threat Hunting DSL parser
+    let match = true;
+    const lowerQuery = query.toLowerCase();
+    
+    if (lowerQuery.includes("score >=")) {
+      const matchScore = lowerQuery.match(/score >= ([\d.]+)/);
+      if (matchScore && matchScore[1]) {
+        match = match && item.local_corroboration_score >= parseFloat(matchScore[1]);
+      }
+    }
+    
+    if (lowerQuery.includes("pattern:")) {
+      const matchPattern = lowerQuery.match(/pattern: ?([a-z0-9.-]+)/);
+      if (matchPattern && matchPattern[1]) {
+        match = match && item.pattern.toLowerCase().includes(matchPattern[1]);
+      }
+    }
+
+    if (!lowerQuery.includes("score") && !lowerQuery.includes("pattern:")) {
+       // standard substring match
+       match = match && item.pattern.toLowerCase().includes(lowerQuery);
+    }
+    
+    return match;
+  };
+
+  const filteredIndicators = data?.ranked_indicators.filter((item) => {
+    const matchesSearch = parseQueryDSL(item, searchTerm);
+    const matchesStatus = filterStatus === "ALL" || 
+      (filterStatus === "CONFIRMED" && item.status.includes("CONFIRMED")) ||
+      (filterStatus === "UNCONFIRMED" && item.status.includes("UNCONFIRMED")) ||
+      (filterStatus === "FLAGGED" && item.downweighted);
+    return matchesSearch && matchesStatus;
+  }) || [];
+
+  const handleExportCEF = (itemsToExport: FeedItem[]) => {
+    if (!itemsToExport.length) return;
+    const cefLines = itemsToExport.map((ind) => {
+      return `CEF:0|SwarmSec|P2P_Exchange|1.0|${ind.status}|SwarmSec Threat Intel|${ind.local_corroboration_score}|msg=${ind.pattern} src_count=${ind.independent_sources} downweighted=${ind.downweighted}`;
+    });
+    const cefText = cefLines.join("\\n");
+    navigator.clipboard.writeText(cefText).then(() => {
+      alert(`Copied ${cefLines.length} indicators to clipboard in CEF format!`);
+    });
+  };
+
+  const toggleSelection = (pattern: string) => {
+    const next = new Set(selectedIndicators);
+    if (next.has(pattern)) next.delete(pattern);
+    else next.add(pattern);
+    setSelectedIndicators(next);
+  };
+
+  if (!auth) {
+    return <Registration onLogin={handleLogin} apiUrl={API_URL} />;
+  }
+
   return (
     <div className="min-h-screen bg-background font-sans text-foreground">
       {/* HEADER */}
@@ -132,6 +268,10 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-4 md:gap-6">
+              <div className="hidden sm:flex items-center gap-2 text-xs font-mono bg-card/80 border border-border/50 px-2 py-1 rounded-full">
+                <div className={`h-2 w-2 rounded-full ${wsConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse'}`} />
+                <span className="text-muted-foreground">{wsConnected ? 'LIVE' : 'OFFLINE'}</span>
+              </div>
               <nav className="hidden md:flex items-center gap-6 text-sm">
                 <button
                   onClick={() => setActiveTab("dashboard")}
@@ -157,6 +297,14 @@ export default function App() {
                   <Users className="h-4 w-4" />
                   <span>Peer Network</span>
                 </button>
+                <a
+                  href={`${API_URL}/docs`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="transition-colors flex items-center gap-2 text-muted-foreground hover:text-primary font-mono text-xs"
+                >
+                  [API DOCS]
+                </a>
               </nav>
 
               <div className="hidden sm:flex items-center gap-2 text-xs font-mono">
@@ -170,10 +318,27 @@ export default function App() {
                   {error ? "Gossip Offline" : "Gossip Active"}
                 </span>
               </div>
+              
+              <div className="hidden sm:flex items-center gap-4 border-l border-border/50 pl-6">
+                <div className="text-xs font-mono text-muted-foreground">
+                  Org: <span className="text-primary font-bold">{auth.org_id}</span>
+                </div>
+                <button onClick={handleLogout} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors" title="Logout">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
 
-              <button
-                onClick={handleManualSync}
-                disabled={syncing}
+              <div className="flex items-center gap-3 border-l border-border/50 pl-6">
+                <button
+                  onClick={() => setPublishModalOpen(true)}
+                  className="cyber-button px-4 py-2 rounded-md text-sm font-semibold flex items-center gap-2 bg-primary/20 text-primary border border-primary/50 hover:bg-primary/30"
+                >
+                  <Send className="w-4 h-4" />
+                  <span className="hidden sm:inline">Publish Threat</span>
+                </button>
+                <button
+                  onClick={handleManualSync}
+                  disabled={syncing}
                 className="cyber-button px-4 py-2 rounded-md text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {syncing ? (
@@ -186,7 +351,8 @@ export default function App() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
+    </header>
 
       {/* MAIN VIEW */}
       <main className="container mx-auto px-4 md:px-6 py-8 space-y-8">
@@ -264,9 +430,39 @@ export default function App() {
                       <Clock className="h-5 w-5 text-primary" />
                       Live P2P Threat Feed
                     </h2>
-                    <span className="text-xs text-muted-foreground font-mono">
-                      {data?.total_messages ?? 0} total messages
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {data?.total_messages ?? 0} total messages
+                      </span>
+                      <button 
+                        onClick={() => handleExportCEF(data?.ranked_indicators || [])}
+                        className="px-3 py-1 bg-primary/20 text-primary text-xs font-mono rounded border border-primary/50 hover:bg-primary/30 transition"
+                      >
+                        Export All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
+                    <div className="flex-1 w-full relative">
+                      <input 
+                        type="text" 
+                        placeholder="Search or Threat Hunt (e.g., score >= 3 AND pattern: 10.0.0.1)" 
+                        className="w-full bg-background/50 border border-border/50 rounded-lg px-4 py-2 font-mono text-sm focus:outline-none focus:border-primary/50"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <select 
+                      className="bg-background/50 border border-border/50 rounded-lg px-4 py-2 font-mono text-sm focus:outline-none focus:border-primary/50"
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                    >
+                      <option value="ALL">All Statuses</option>
+                      <option value="CONFIRMED">Confirmed Only</option>
+                      <option value="UNCONFIRMED">Unconfirmed Only</option>
+                      <option value="FLAGGED">Flagged (Sybil/Downweighted)</option>
+                    </select>
                   </div>
 
                   {loading && !data ? (
@@ -277,20 +473,25 @@ export default function App() {
                     <div className="text-destructive font-mono p-4 bg-destructive/10 rounded-lg border border-destructive/30">
                       {error} - Ensure the Node is running on {API_URL}
                     </div>
-                  ) : data?.ranked_indicators.length === 0 ? (
+                  ) : filteredIndicators.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <Radar className="h-16 w-16 text-primary/20 mb-4" />
                       <p className="text-muted-foreground font-mono">
-                        No STIX 2.1 indicators received from peers yet.
+                        No STIX 2.1 indicators matched your filters.
                       </p>
                       <p className="text-xs text-muted-foreground/60 mt-2">
-                        Waiting for gossip messages...
+                        Adjust search or wait for gossip...
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {data?.ranked_indicators.map((item) => (
-                        <IndicatorRow key={item.pattern} item={item} />
+                      {filteredIndicators.map((item) => (
+                        <IndicatorRow 
+                          key={item.pattern} 
+                          item={item} 
+                          selected={selectedIndicators.has(item.pattern)}
+                          onSelect={() => toggleSelection(item.pattern)}
+                        />
                       ))}
                     </div>
                   )}
@@ -383,34 +584,77 @@ export default function App() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {activeNodes.map((node) => (
-                    <div
-                      key={node}
-                      className="p-4 border border-border/40 bg-background/40 rounded-lg flex items-center gap-4 hover:border-primary/50 hover:bg-primary/5 transition-all group"
-                    >
-                      <div className="h-10 w-10 shrink-0 rounded bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:scale-110 transition-transform">
-                        <Server className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="font-mono text-sm font-semibold truncate"
-                          title={node}
-                        >
-                          {node}
+                  {activeNodes.map((node) => {
+                    const stats = peerAnalytics[node] || { reputation_score: 50, reports: 0 };
+                    return (
+                      <div
+                        key={node}
+                        className="p-4 border border-border/40 bg-background/40 rounded-lg flex items-center gap-4 hover:border-primary/50 hover:bg-primary/5 transition-all group"
+                      >
+                        <div className="h-10 w-10 shrink-0 rounded bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:scale-110 transition-transform">
+                          <Server className="h-5 w-5 text-primary" />
                         </div>
-                        <div className="text-[10px] text-success flex items-center gap-1.5 mt-1 font-mono uppercase tracking-widest">
-                          <div className="h-1.5 w-1.5 bg-success rounded-full animate-pulse" />{" "}
-                          Verified by Registrar
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className="font-mono text-sm font-semibold truncate flex items-center justify-between"
+                            title={node}
+                          >
+                            <span>{node.substring(0, 8)}...</span>
+                            <span className={cn("text-xs", stats.reputation_score >= 80 ? "text-success" : stats.reputation_score <= 20 ? "text-destructive" : "text-primary")}>
+                              {stats.reputation_score}/100
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-success flex items-center gap-1.5 mt-1 font-mono uppercase tracking-widest">
+                            <div className="h-1.5 w-1.5 bg-success rounded-full animate-pulse" />{" "}
+                            {stats.reports} Contributions
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
         )}
       </main>
+
+      {/* Floating Action Bar for Bulk Operations */}
+      {selectedIndicators.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-md border border-primary/50 px-6 py-4 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.2)] flex items-center gap-6 z-50 animate-fade-in">
+          <div className="font-mono text-sm">
+            <strong className="text-primary">{selectedIndicators.size}</strong> indicators selected
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              className="px-4 py-2 bg-background border border-border/50 text-foreground font-mono text-xs rounded hover:bg-primary/10 transition"
+              onClick={() => handleExportCEF(data?.ranked_indicators.filter(i => selectedIndicators.has(i.pattern)) || [])}
+            >
+              Export Selected
+            </button>
+            <button 
+              className="px-4 py-2 bg-success/20 border border-success/50 text-success font-mono text-xs rounded hover:bg-success/30 transition"
+              onClick={() => alert(`Simulating Bulk Endorsement of ${selectedIndicators.size} indicators via API...`)}
+            >
+              Endorse All
+            </button>
+            <button 
+              className="p-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSelectedIndicators(new Set())}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <PublishModal 
+        isOpen={publishModalOpen} 
+        onClose={() => setPublishModalOpen(false)} 
+        apiUrl={API_URL} 
+        auth={auth} 
+        onSuccess={handleManualSync} 
+      />
     </div>
   );
 }
@@ -459,7 +703,8 @@ function StatCard({
   );
 }
 
-function IndicatorRow({ item }: { item: FeedItem }) {
+function IndicatorRow({ item, selected, onSelect }: { item: FeedItem, selected: boolean, onSelect: () => void }) {
+  const [expanded, setExpanded] = useState(false);
   const isHighTrust = item.local_corroboration_score >= 3.0;
   const isUnconfirmed = item.status.includes("UNCONFIRMED");
 
@@ -476,103 +721,208 @@ function IndicatorRow({ item }: { item: FeedItem }) {
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg transition-all border",
+        "flex flex-col p-4 rounded-lg transition-all border",
         item.downweighted
           ? "border-destructive/30 bg-destructive/10 hover:bg-destructive/20"
           : "border-border/40 bg-background/40 hover:bg-background/80 hover:border-border/80",
       )}
     >
-      <div className="flex items-start sm:items-center gap-4 w-full">
-        <div className="flex flex-col items-center justify-center p-3 border border-border/30 rounded bg-background/50 min-w-[80px] shrink-0">
-          <span
-            className={cn(
-              "text-xl font-bold font-mono",
-              isHighTrust
-                ? "text-success text-glow-green"
-                : item.downweighted
-                  ? "text-destructive text-glow-red"
-                  : "text-foreground",
-            )}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+        <div className="flex items-start sm:items-center gap-4 w-full">
+          <input 
+            type="checkbox" 
+            className="mt-1 sm:mt-0 w-4 h-4 rounded border-border/50 bg-background/50 accent-primary cursor-pointer shrink-0" 
+            checked={selected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+          />
+          <div 
+            className="flex flex-col items-center justify-center p-3 border border-border/30 rounded bg-background/50 min-w-[80px] shrink-0 cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
           >
-            {item.local_corroboration_score.toFixed(1)}
-          </span>
-          <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">
-            Score
-          </span>
-        </div>
-
-        <div className="flex-1 min-w-0 py-1">
-          <div className="font-mono text-sm md:text-base font-medium flex flex-wrap items-center gap-2 mb-2">
-            <span className="break-all">{item.pattern}</span>
-            {item.flags.map((flag, idx) => (
-              <span
-                key={idx}
-                className={cn(
-                  "text-[10px] px-2 py-0.5 rounded border uppercase tracking-widest flex items-center font-semibold whitespace-nowrap",
-                  flag.includes("downweighted")
-                    ? "bg-destructive/20 text-destructive border-destructive/30"
-                    : "bg-warning/20 text-warning border-warning/30",
-                )}
-              >
-                {flag.includes("downweighted") ? (
-                  <AlertTriangle className="w-3 h-3 mr-1" />
-                ) : null}
-                {flag.replace(/_/g, " ")}
-              </span>
-            ))}
-            {isHighTrust && !item.downweighted && (
-              <span className="text-[10px] px-2 py-0.5 rounded bg-success/20 text-success border border-success/30 uppercase tracking-widest flex items-center font-semibold whitespace-nowrap">
-                <Shield className="w-3 h-3 mr-1" /> Verified
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-            <span
-              className="flex items-center gap-1.5"
-              title="Number of independent organizations that endorsed this"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <strong className="text-foreground">
-                {item.independent_sources}
-              </strong>{" "}
-              {item.independent_sources === 1 ? "org" : "orgs"}
-            </span>
-            <span
-              className="flex items-center gap-1.5"
-              title="Number of raw report messages"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <strong className="text-foreground">
-                {item.reports_count}
-              </strong>{" "}
-              {item.reports_count === 1 ? "report" : "reports"}
-            </span>
-            <span
-              className="flex items-center gap-1.5"
-              title="Number of feedback/endorsement messages"
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <strong className="text-foreground">
-                {item.feedback_count}
-              </strong>{" "}
-              feedback
-            </span>
-            <span className="flex items-center gap-1.5" title="Time first seen">
-              <History className="w-3.5 h-3.5" />
-              {formatDate(item.first_seen)}
-            </span>
             <span
               className={cn(
-                "px-1.5 py-0.5 rounded bg-background/50 border border-border/50 uppercase tracking-wider text-[10px] font-bold",
-                isUnconfirmed ? "text-muted-foreground" : "text-foreground",
+                "text-xl font-bold font-mono",
+                isHighTrust
+                  ? "text-success text-glow-green"
+                  : item.downweighted
+                    ? "text-destructive text-glow-red"
+                    : "text-foreground",
               )}
             >
-              {item.status}
+              {item.local_corroboration_score.toFixed(1)}
+            </span>
+            <span className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">
+              Score
             </span>
           </div>
+
+          <div 
+            className="flex-1 min-w-0 py-1 cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <div className="font-mono text-sm md:text-base font-medium flex flex-wrap items-center gap-2 mb-2">
+              <span className="break-all">{item.pattern}</span>
+              {item.flags.map((flag, idx) => (
+                <span
+                  key={idx}
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 rounded border uppercase tracking-widest flex items-center font-semibold whitespace-nowrap",
+                    flag.includes("downweighted")
+                      ? "bg-destructive/20 text-destructive border-destructive/30"
+                      : "bg-warning/20 text-warning border-warning/30",
+                  )}
+                >
+                  {flag.includes("downweighted") ? (
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                  ) : null}
+                  {flag.replace(/_/g, " ")}
+                </span>
+              ))}
+              {isHighTrust && !item.downweighted && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-success/20 text-success border border-success/30 uppercase tracking-widest flex items-center font-semibold whitespace-nowrap">
+                  <Shield className="w-3 h-3 mr-1" /> Verified
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+              <span
+                className="flex items-center gap-1.5"
+                title="Number of independent organizations that endorsed this"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <strong className="text-foreground">
+                  {item.independent_sources}
+                </strong>{" "}
+                {item.independent_sources === 1 ? "org" : "orgs"}
+              </span>
+              <span
+                className="flex items-center gap-1.5"
+                title="Number of raw report messages"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <strong className="text-foreground">
+                  {item.reports_count}
+                </strong>{" "}
+                {item.reports_count === 1 ? "report" : "reports"}
+              </span>
+              <span
+                className="flex items-center gap-1.5"
+                title="Number of feedback/endorsement messages"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <strong className="text-foreground">
+                  {item.feedback_count}
+                </strong>{" "}
+                feedback
+              </span>
+              <span className="flex items-center gap-1.5" title="Time first seen">
+                <History className="w-3.5 h-3.5" />
+                {formatDate(item.first_seen)}
+              </span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded bg-background/50 border border-border/50 uppercase tracking-wider text-[10px] font-bold",
+                  isUnconfirmed ? "text-muted-foreground" : "text-foreground",
+                )}
+              >
+                {item.status}
+              </span>
+            </div>
+            
+            {item.identities && item.identities.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-widest mr-1">Reported by:</span>
+                {item.identities.map((ident: string) => (
+                  <span 
+                    key={ident} 
+                    className="text-[10px] font-mono px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded cursor-pointer hover:bg-primary/20 hover:border-primary/40 transition flex items-center gap-1.5"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      alert(`Peer Details:\nID: ${ident}\nStatus: VERIFIED\nContributions: Extracted from network graph`);
+                    }}
+                  >
+                    <Server className="w-3 h-3" />
+                    {ident.substring(0, 8)}...
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <div className="shrink-0 pl-2 opacity-50 hover:opacity-100">
+          {expanded ? <ChevronUp /> : <ChevronDown />}
         </div>
       </div>
+      
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-border/30 animate-fade-in">
+          <h4 className="text-xs font-mono font-semibold text-muted-foreground mb-4 uppercase tracking-widest flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" /> Score Progression Timeline
+          </h4>
+          <div className="h-48 w-full bg-background/30 rounded-lg p-2 border border-border/20">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={item.timeline?.map(t => ({ ...t, timeStr: new Date(t.time * 1000).toLocaleTimeString() }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" opacity={0.5} />
+                <XAxis 
+                  dataKey="timeStr" 
+                  tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }} 
+                  tickMargin={10} 
+                  axisLine={{ stroke: '#333' }}
+                />
+                <YAxis 
+                  tick={{ fill: '#888', fontSize: 10, fontFamily: 'monospace' }} 
+                  domain={[0, 'dataMax + 1']}
+                  axisLine={{ stroke: '#333' }}
+                />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#111', borderColor: '#333', fontFamily: 'monospace', fontSize: '12px' }}
+                  labelStyle={{ color: '#888' }}
+                  formatter={(value: any, _name: any, props: any) => {
+                    return [
+                      <div key="custom-tooltip">
+                        <span className="text-primary font-bold">{value}</span>
+                        <div className="text-[10px] text-muted-foreground mt-1 uppercase">
+                          {props.payload.type} from {props.payload.peer.substring(0, 8)}...
+                        </div>
+                      </div>, 
+                      "Score"
+                    ];
+                  }}
+                />
+                <Line 
+                  type="stepAfter" 
+                  dataKey="score" 
+                  stroke="var(--color-primary, #3b82f6)" 
+                  strokeWidth={2} 
+                  dot={<CustomDot />} 
+                  activeDot={{ r: 6, fill: "var(--color-primary, #3b82f6)", stroke: "#fff", strokeWidth: 2 }}
+                  isAnimationActive={true}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const CustomDot = (props: any) => {
+  const { cx, cy, payload } = props;
+  const isFeedback = payload.type === "feedback";
+  
+  if (isFeedback) {
+    return (
+      <circle cx={cx} cy={cy} r={4} fill="#eab308" stroke="#333" strokeWidth={1} />
+    );
+  }
+  
+  return (
+    <circle cx={cx} cy={cy} r={3} fill="#3b82f6" stroke="#111" strokeWidth={1} />
+  );
+};

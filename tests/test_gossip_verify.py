@@ -30,9 +30,11 @@ def mock_keys():
 
 @pytest.fixture
 def registrar_keys():
-    """A fresh registrar keypair for credential issuance."""
-    priv, pub = generate_keypair()
-    return priv, pub
+    """3 fresh registrar keypairs for 2-of-3 threshold issuance."""
+    keys = [generate_keypair() for _ in range(3)]
+    privs = [k[0] for k in keys]
+    pubs = [k[1] for k in keys]
+    return privs, pubs
 
 
 @pytest.fixture
@@ -63,31 +65,35 @@ def anyio_backend():
     return 'asyncio'
 
 
-def _build_mock_verifier(pseudonym_b64_pub: str, registrar_priv, registrar_pub,
+def _build_mock_verifier(pseudonym_b64_pub: str, registrar_privs, registrar_pubs,
                          credential_id: str = "test-cred-123") -> MessageVerifier:
     """Build a MessageVerifier with a properly signed credential in the mock log."""
 
-    cred = issue_credential(pseudonym_b64_pub, registrar_priv)
+    cred = issue_credential(pseudonym_b64_pub, registrar_privs[0])
     cred.credential_id = credential_id
 
     # Re-sign with the correct credential_id
     from swarmsec.crypto.canonicalize import canonicalize
     from swarmsec.crypto.keys import sign as _sign
     canonical_bytes = canonicalize(cred.signable_fields())
-    sig = _sign(registrar_priv, canonical_bytes)
-    cred.registrar_signature = base64.b64encode(sig).decode("ascii")
+    sig1 = _sign(registrar_privs[0], canonical_bytes)
+    sig2 = _sign(registrar_privs[1], canonical_bytes)
+    cred.registrar_signatures = [
+        base64.b64encode(sig1).decode("ascii"),
+        base64.b64encode(sig2).decode("ascii")
+    ]
 
     cred_dict = cred.model_dump(mode="json")
 
-    with patch.object(MessageVerifier, '_fetch_registrar_pubkey'):
+    with patch.object(MessageVerifier, '_fetch_registrar_pubkeys'):
         verifier = MessageVerifier("http://mock-registrar")
 
-    verifier.registrar_pubkey = registrar_pub
+    verifier.registrar_pubkeys = registrar_pubs
 
     verifier._get_credential_from_log = AsyncMock(return_value={
         "public_key": pseudonym_b64_pub,
         "status": "active",
-        "registrar_signature": cred.registrar_signature,
+        "registrar_signatures": cred.registrar_signatures,
         "credential": cred_dict,
     })
 
@@ -98,8 +104,8 @@ def _build_mock_verifier(pseudonym_b64_pub: str, registrar_priv, registrar_pub,
 def mock_verifier(mock_keys, registrar_keys):
     """A MessageVerifier with a properly-signed credential in the mock log."""
     _, b64_pub = mock_keys
-    reg_priv, reg_pub = registrar_keys
-    return _build_mock_verifier(b64_pub, reg_priv, reg_pub)
+    reg_privs, reg_pubs = registrar_keys
+    return _build_mock_verifier(b64_pub, reg_privs, reg_pubs)
 
 
 @pytest.mark.anyio
@@ -139,16 +145,16 @@ async def test_reject_revoked_credential(mock_verifier, valid_message):
 
 @pytest.mark.anyio
 async def test_reject_invalid_registrar_signature(mock_keys, registrar_keys, valid_message):
-    """A credential whose registrar_signature doesn't verify must be rejected."""
+    """A credential whose registrar_signatures doesn't verify must be rejected."""
     _, b64_pub = mock_keys
-    reg_priv, reg_pub = registrar_keys
+    reg_privs, reg_pubs = registrar_keys
 
-    # Build a valid verifier, then corrupt just the registrar_signature
-    verifier = _build_mock_verifier(b64_pub, reg_priv, reg_pub)
+    # Build a valid verifier, then corrupt just one of the registrar signatures (fails 2-of-3)
+    verifier = _build_mock_verifier(b64_pub, reg_privs, reg_pubs)
     cred_dict = dict(verifier._get_credential_from_log.return_value["credential"])
-    cred_dict["registrar_signature"] = base64.b64encode(b"0" * 64).decode("ascii")
+    cred_dict["registrar_signatures"] = [base64.b64encode(b"0" * 64).decode("ascii")]
     verifier._get_credential_from_log.return_value["credential"] = cred_dict
-    verifier._get_credential_from_log.return_value["registrar_signature"] = cred_dict["registrar_signature"]
+    verifier._get_credential_from_log.return_value["registrar_signatures"] = cred_dict["registrar_signatures"]
 
     is_valid, reason = await verifier.verify(valid_message)
     assert is_valid is False

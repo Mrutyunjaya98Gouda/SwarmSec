@@ -105,7 +105,7 @@ def test_feed_and_query_with_indicators(client):
     top_item = data["ranked_indicators"][0]
     assert top_item["pattern"] == "[file:hashes.'SHA-256' = 'aaaabbbbccccdddd']"
     assert top_item["local_corroboration_score"] == 1.0
-    assert top_item["status"] == "CONFIRMED"
+    assert top_item["status"] == "CONFIRMED — medium confidence"
     assert top_item["independent_sources"] == 2
 
     # Second item should be single-source IP (score 0.0)

@@ -40,3 +40,5 @@ Thumbs.db
 # Data / logs (generated at runtime)
 data/
 *.jsonl
+*.db
+*.pub

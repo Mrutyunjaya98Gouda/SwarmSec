@@ -77,3 +77,30 @@ class TestTransparencyLog:
         is_valid, msg = log.verify_chain()
         assert not is_valid
         assert "expected index 1, got 99" in msg
+
+    def test_merkle_root_empty(self):
+        log = TransparencyLog()
+        assert log.get_merkle_root() is None
+
+    def test_merkle_inclusion_proof(self):
+        log = TransparencyLog()
+        for i in range(5):
+            log.append({"data": i})
+            
+        root = log.get_merkle_root()
+        assert root is not None
+        
+        proof = log.get_inclusion_proof(2)
+        assert proof is not None
+        assert proof["index"] == 2
+        assert proof["merkle_root"] == root
+        
+        # Verify the proof locally
+        current_hash = proof["leaf_hash"]
+        for step in proof["audit_path"]:
+            if step["direction"] == "left":
+                current_hash = TransparencyLog._merkle_hash(step["hash"], current_hash)
+            else:
+                current_hash = TransparencyLog._merkle_hash(current_hash, step["hash"])
+                
+        assert current_hash == root

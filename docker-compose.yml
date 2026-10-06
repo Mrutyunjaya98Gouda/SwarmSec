@@ -3,39 +3,56 @@ version: "3.9"
 services:
   registrar:
     build: .
-    command: ["uvicorn", "swarmsec.registrar.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "swarmsec.registrar.app:app", "--host", "0.0.0.0", "--port", "8000", "--ssl-keyfile", "/certs/registrar.key", "--ssl-certfile", "/certs/registrar.pem"]
+    volumes:
+      - ./certs:/certs
     ports:
       - "8000:8000"
 
   node1:
     build: .
-    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8001", "--ssl-keyfile", "/certs/node1.key", "--ssl-certfile", "/certs/node1.pem"]
+    volumes:
+      - ./certs:/certs
     ports:
       - "8001:8001"
     environment:
-      - REGISTRAR_URL=http://registrar:8000
-      - PEERS=http://node2:8002,http://node3:8003
+      - REGISTRAR_URL=https://registrar:8000
+      - PEERS=https://node2:8002,https://node3:8003
+      - TLS_CA_PATH=/certs/ca.pem
+      - TLS_CERT_PATH=/certs/node1.pem
+      - TLS_KEY_PATH=/certs/node1.key
     depends_on:
       - registrar
 
   node2:
     build: .
-    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8002", "--ssl-keyfile", "/certs/node2.key", "--ssl-certfile", "/certs/node2.pem"]
+    volumes:
+      - ./certs:/certs
     ports:
       - "8002:8002"
     environment:
-      - REGISTRAR_URL=http://registrar:8000
-      - PEERS=http://node1:8001,http://node3:8003
+      - REGISTRAR_URL=https://registrar:8000
+      - PEERS=https://node1:8001,https://node3:8003
+      - TLS_CA_PATH=/certs/ca.pem
+      - TLS_CERT_PATH=/certs/node2.pem
+      - TLS_KEY_PATH=/certs/node2.key
     depends_on:
       - registrar
 
   node3:
     build: .
-    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8003"]
+    command: ["uvicorn", "swarmsec.node.app:app", "--host", "0.0.0.0", "--port", "8003", "--ssl-keyfile", "/certs/node3.key", "--ssl-certfile", "/certs/node3.pem"]
+    volumes:
+      - ./certs:/certs
     ports:
       - "8003:8003"
     environment:
-      - REGISTRAR_URL=http://registrar:8000
-      - PEERS=http://node1:8001,http://node2:8002
+      - REGISTRAR_URL=https://registrar:8000
+      - PEERS=https://node1:8001,https://node2:8002
+      - TLS_CA_PATH=/certs/ca.pem
+      - TLS_CERT_PATH=/certs/node3.pem
+      - TLS_KEY_PATH=/certs/node3.key
     depends_on:
       - registrar

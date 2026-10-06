@@ -1,32 +1,50 @@
 """Rate limiting for SwarmSec gossip."""
 
+import sqlite3
 import time
 from collections import defaultdict
+from pathlib import Path
 
 # Epoch configuration
 EPOCH_DURATION_SECONDS = 60
 MAX_MESSAGES_PER_EPOCH = 5
 
-# Memory cap for the message-id seen-set (prevents unbounded growth).
-# At 36 bytes per UUID, 100k entries ≈ 3.6 MB — acceptable for a node daemon.
-SEEN_IDS_MAX_SIZE = 100_000
+# SQLite persistence for replay prevention (TTL 7 days)
+MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60
+DB_PATH = Path(".swarmsec_replay.db")
 
 
 class RateLimiter:
     def __init__(self):
         # Maps epoch_id -> (credential_id -> count)
         self.epochs = defaultdict(lambda: defaultdict(int))
-        # Persistent set of message_ids already processed (replay prevention).
-        # Cleared only when exceeding SEEN_IDS_MAX_SIZE (oldest-first not tracked;
-        # a full reset on overflow is a documented simplification for demo scale).
-        self._seen_message_ids: set[str] = set()
+        
+        # Initialize SQLite for persistent replay prevention
+        self._init_db()
+
+    def _init_db(self):
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS seen_messages (
+                    message_id TEXT PRIMARY KEY,
+                    timestamp_recorded INTEGER
+                )
+                """
+            )
+            # Create an index on the timestamp for fast TTL pruning
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON seen_messages (timestamp_recorded)")
 
     def _get_current_epoch(self) -> int:
         return int(time.time() // EPOCH_DURATION_SECONDS)
 
     def is_replay(self, message_id: str) -> bool:
         """Return True if this message_id has already been processed."""
-        return message_id in self._seen_message_ids
+        if not message_id:
+            return False
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.execute("SELECT 1 FROM seen_messages WHERE message_id = ?", (message_id,))
+            return cursor.fetchone() is not None
 
     def check_and_consume(
         self, credential_id: str, timestamp_str: str, message_id: str = ""
@@ -43,7 +61,7 @@ class RateLimiter:
         and documented in NOTES.md.
         """
         # Replay check: reject any message_id we have already seen
-        if message_id and message_id in self._seen_message_ids:
+        if message_id and self.is_replay(message_id):
             return False
 
         epoch_id = self._get_current_epoch()
@@ -57,10 +75,21 @@ class RateLimiter:
 
         # Record the message_id to prevent future replays
         if message_id:
-            if len(self._seen_message_ids) >= SEEN_IDS_MAX_SIZE:
-                # Documented simplification: clear on overflow rather than LRU
-                self._seen_message_ids.clear()
-            self._seen_message_ids.add(message_id)
+            current_time = int(time.time())
+            with sqlite3.connect(DB_PATH) as conn:
+                try:
+                    conn.execute(
+                        "INSERT INTO seen_messages (message_id, timestamp_recorded) VALUES (?, ?)",
+                        (message_id, current_time)
+                    )
+                except sqlite3.IntegrityError:
+                    pass  # Race condition safeguard
+
+                # Cleanup old messages periodically (TTL based)
+                # We do this probabilistically or just every time for simplicity at demo scale
+                if current_time % 100 == 0:  # ~1% of the time
+                    cutoff = current_time - MESSAGE_TTL_SECONDS
+                    conn.execute("DELETE FROM seen_messages WHERE timestamp_recorded < ?", (cutoff,))
 
         # Cleanup old epochs periodically (naive implementation for demo)
         old_epochs = [e for e in self.epochs.keys() if e < epoch_id - 2]

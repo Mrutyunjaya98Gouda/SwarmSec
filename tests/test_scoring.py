@@ -66,11 +66,11 @@ def test_independent_corroboration():
     
     result = compute_corroboration_score([msg1, msg2])
     
-    assert result["status"] == "CONFIRMED"
+    assert result["status"] == "UNCONFIRMED — insufficient confidence score"
     # Base score 0 + 1 * 0.5 (IPv4 weight)
     assert result["local_corroboration_score"] == 0.5
     assert result["independent_sources"] == 2
-    assert result["flags"] == []
+    assert result["flags"] == ["missing_references_low_confidence"]
 
 
 def test_high_entropy_corroboration():
@@ -81,7 +81,7 @@ def test_high_entropy_corroboration():
     
     result = compute_corroboration_score([msg1, msg2, msg3])
     
-    assert result["status"] == "CONFIRMED"
+    assert result["status"] == "CONFIRMED — high confidence"
     # Base score 0 + 2 * 1.0 (Hash weight)
     assert result["local_corroboration_score"] == 2.0
     assert result["independent_sources"] == 3

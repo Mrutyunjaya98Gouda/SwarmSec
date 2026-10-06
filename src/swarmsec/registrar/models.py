@@ -49,7 +49,7 @@ class Credential(BaseModel):
     status: Literal["active", "revoked"] = "active"
     issued_at: str = ""  # ISO 8601 UTC string
     expires_at: str = ""  # ISO 8601 UTC string
-    registrar_signature: str = ""  # base64-encoded 64-byte Ed25519 signature
+    registrar_signatures: list[str] = Field(default_factory=list)  # list of base64-encoded 64-byte Ed25519 signatures
 
     def signable_fields(self) -> dict:
         """Return only the fields that are covered by the registrar signature.
@@ -73,7 +73,7 @@ class CredentialStatusUpdate(BaseModel):
     credential_id: str
     new_status: Literal["active", "revoked"]
     updated_at: str  # ISO 8601 UTC string
-    registrar_signature: str  # base64-encoded 64-byte Ed25519 signature
+    registrar_signatures: list[str] = Field(default_factory=list)  # list of base64-encoded 64-byte Ed25519 signatures
 
     def signable_fields(self) -> dict:
         """Return only the fields covered by the signature."""

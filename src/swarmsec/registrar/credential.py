@@ -61,37 +61,41 @@ def issue_credential(
     # Canonicalize the signable fields, then sign
     canonical_bytes = canonicalize(cred.signable_fields())
     signature = sign(registrar_private_key, canonical_bytes)
-    cred.registrar_signature = base64.b64encode(signature).decode("ascii")
+    cred.registrar_signatures.append(base64.b64encode(signature).decode("ascii"))
 
     return cred
 
 
 def verify_credential(
     credential: Credential,
-    registrar_public_key: Ed25519PublicKey,
+    registrar_public_keys: list[Ed25519PublicKey],
 ) -> bool:
-    """Verify that a credential's signature is valid.
-
-    Reconstructs the canonical form of the credential's signable fields
-    and verifies the registrar's Ed25519 signature over it.
+    """Verify that a credential's signatures are valid (2-of-3 threshold).
 
     Args:
         credential: The credential to verify.
-        registrar_public_key: The registrar's Ed25519 public key.
+        registrar_public_keys: The registrar's 3 Ed25519 public keys.
 
     Returns:
-        True if the signature is valid, False otherwise.
+        True if the signatures are valid and meet threshold, False otherwise.
     """
-    if not credential.registrar_signature:
-        return False
-
-    try:
-        signature = base64.b64decode(credential.registrar_signature)
-    except Exception:
+    if len(credential.registrar_signatures) < 2:
         return False
 
     canonical_bytes = canonicalize(credential.signable_fields())
-    return verify(registrar_public_key, canonical_bytes, signature)
+    
+    valid_sigs = 0
+    for sig_b64 in credential.registrar_signatures:
+        try:
+            signature = base64.b64decode(sig_b64)
+            for pub in registrar_public_keys:
+                if verify(pub, canonical_bytes, signature):
+                    valid_sigs += 1
+                    break
+        except Exception:
+            pass
+            
+    return valid_sigs >= 2
 
 
 def update_status(
@@ -115,39 +119,46 @@ def update_status(
         credential_id=credential_id,
         new_status=new_status,
         updated_at=now.isoformat(),
-        registrar_signature="",
+        registrar_signatures=[],
     )
 
     canonical_bytes = canonicalize(update.signable_fields())
     signature = sign(registrar_private_key, canonical_bytes)
-    update.registrar_signature = base64.b64encode(signature).decode("ascii")
+    update.registrar_signatures.append(base64.b64encode(signature).decode("ascii"))
 
     return update
 
 
 def verify_status_update(
     update: CredentialStatusUpdate,
-    registrar_public_key: Ed25519PublicKey,
+    registrar_public_keys: list[Ed25519PublicKey],
 ) -> bool:
     """Verify the signature on a credential status update.
 
     Args:
         update: The status update to verify.
-        registrar_public_key: The registrar's Ed25519 public key.
+        registrar_public_keys: The registrar's Ed25519 public keys.
 
     Returns:
         True if the signature is valid, False otherwise.
     """
-    if not update.registrar_signature:
-        return False
-
-    try:
-        signature = base64.b64decode(update.registrar_signature)
-    except Exception:
+    if len(update.registrar_signatures) < 2:
         return False
 
     canonical_bytes = canonicalize(update.signable_fields())
-    return verify(registrar_public_key, canonical_bytes, signature)
+    
+    valid_sigs = 0
+    for sig_b64 in update.registrar_signatures:
+        try:
+            signature = base64.b64decode(sig_b64)
+            for pub in registrar_public_keys:
+                if verify(pub, canonical_bytes, signature):
+                    valid_sigs += 1
+                    break
+        except Exception:
+            pass
+            
+    return valid_sigs >= 2
 
 
 def is_credential_expired(credential: Credential) -> bool:

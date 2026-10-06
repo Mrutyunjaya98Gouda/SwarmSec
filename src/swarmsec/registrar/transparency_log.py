@@ -160,3 +160,80 @@ class TransparencyLog:
 
     def __len__(self) -> int:
         return len(self._entries)
+
+    # --- Merkle Audit Proofs ---
+
+    @staticmethod
+    def _merkle_hash(left: str, right: str) -> str:
+        """Combine two hex hashes into a parent Merkle node hash."""
+        hasher = hashlib.sha256()
+        hasher.update(bytes.fromhex(left))
+        hasher.update(bytes.fromhex(right))
+        return hasher.hexdigest()
+
+    def _build_merkle_tree(self) -> list[list[str]]:
+        """Builds the full binary Merkle tree of entry hashes.
+        
+        Returns a list of levels, where level 0 is the leaves.
+        """
+        if not self._entries:
+            return []
+            
+        leaves = [entry.entry_hash for entry in self._entries]
+        tree = [leaves]
+        current_level = leaves
+        
+        while len(current_level) > 1:
+            next_level = []
+            for i in range(0, len(current_level), 2):
+                left = current_level[i]
+                if i + 1 < len(current_level):
+                    right = current_level[i + 1]
+                else:
+                    right = left  # Duplicate odd node to balance
+                next_level.append(self._merkle_hash(left, right))
+            tree.append(next_level)
+            current_level = next_level
+            
+        return tree
+
+    def get_merkle_root(self) -> str | None:
+        """Get the cryptographic root of the Merkle tree."""
+        tree = self._build_merkle_tree()
+        if not tree:
+            return None
+        return tree[-1][0]
+
+    def get_inclusion_proof(self, index: int) -> dict[str, Any] | None:
+        """Generate a Merkle inclusion proof for the entry at the given index.
+        
+        Returns a dict containing the root, the leaf hash, and the audit path.
+        """
+        if index < 0 or index >= len(self._entries):
+            return None
+            
+        tree = self._build_merkle_tree()
+        audit_path = []
+        
+        curr_index = index
+        for level in tree[:-1]:
+            is_right_child = curr_index % 2 == 1
+            if is_right_child:
+                sibling_hash = level[curr_index - 1]
+                direction = "left"
+            else:
+                if curr_index + 1 < len(level):
+                    sibling_hash = level[curr_index + 1]
+                else:
+                    sibling_hash = level[curr_index]  # Duplicated
+                direction = "right"
+                
+            audit_path.append({"hash": sibling_hash, "direction": direction})
+            curr_index = curr_index // 2
+            
+        return {
+            "index": index,
+            "leaf_hash": tree[0][index],
+            "merkle_root": tree[-1][0],
+            "audit_path": audit_path
+        }
