@@ -110,6 +110,53 @@ async def lifespan(app: FastAPI):
         
     init_db()
     logger.info(f"Node started. Peers: {_PEERS}")
+
+    # 1. Announce this node to configured peers if ANNOUNCE_URL is specified
+    announce_url = os.environ.get("ANNOUNCE_URL")
+    if announce_url:
+        cert_path = os.environ.get("TLS_CERT_PATH")
+        key_path = os.environ.get("TLS_KEY_PATH")
+        cert = (cert_path, key_path) if cert_path and key_path else None
+        async with httpx.AsyncClient(verify=False, cert=cert, timeout=3.0) as client:
+            for peer in list(_PEERS):
+                try:
+                    await client.post(f"{peer}/peers/register", json={"peer_url": announce_url})
+                except Exception:
+                    pass
+
+    # 2. Sync full history from peers on startup
+    if _PEERS:
+        cert_path = os.environ.get("TLS_CERT_PATH")
+        key_path = os.environ.get("TLS_KEY_PATH")
+        cert = (cert_path, key_path) if cert_path and key_path else None
+        async with httpx.AsyncClient(verify=False, cert=cert, timeout=3.0) as client:
+            for peer in list(_PEERS):
+                try:
+                    resp = await client.get(f"{peer}/messages")
+                    if resp.status_code == 200:
+                        for msg_dict in resp.json():
+                            try:
+                                msg = SwarmSecMessage(**msg_dict)
+                                if msg.envelope.message_id not in _MESSAGES:
+                                    is_valid, _ = await _VERIFIER.verify(msg)
+                                    if is_valid:
+                                        _MESSAGES[msg.envelope.message_id] = msg
+                                        _SEEN_MESSAGES.add(msg.envelope.message_id)
+                                        if msg.payload.type == "indicator":
+                                            pattern = msg.payload.pattern
+                                            if pattern not in _INDICATORS:
+                                                _INDICATORS[pattern] = []
+                                            _INDICATORS[pattern].append(msg.envelope.message_id)
+                                        elif msg.payload.type == "opinion":
+                                            for target_id in msg.payload.object_refs:
+                                                if target_id not in _FEEDBACKS:
+                                                    _FEEDBACKS[target_id] = []
+                                                _FEEDBACKS[target_id].append(msg.envelope.message_id)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
     yield
 
 
@@ -122,6 +169,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class PeerRegisterRequest(BaseModel):
+    peer_url: str
+
+
+@app.post("/peers/register")
+def register_peer(req: PeerRegisterRequest):
+    """Dynamically register a new peer into the mesh."""
+    global _PEERS
+    peer = req.peer_url.rstrip("/")
+    if peer and peer not in _PEERS:
+        _PEERS.append(peer)
+        logger.info(f"Dynamically registered new peer: {peer}. Total active peers: {len(_PEERS)}")
+    return {"status": "ok", "peers": _PEERS}
+
+
+@app.get("/messages")
+def get_all_messages():
+    """Return all gossiped messages held by this node for full history sync."""
+    return [m.model_dump() for m in _MESSAGES.values()]
 
 
 class PublishRequest(BaseModel):

@@ -37,31 +37,52 @@ fi
 cd ..
 
 echo "[3/4] Checking TLS / CA Certificates..."
-if [ ! -f "certs/ca.pem" ]; then
-    echo "⚠️  Missing 'certs/ca.pem'! Downloading CA from Host ($HOST_IP:8000)..."
-    mkdir -p certs
-    # Fetch public CA and node cert from host or run cert generator with shared CA
-    python -c "
-import urllib.request, ssl
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-" || true
+if [ ! -f "certs/ca.pem" ] || [ ! -f "certs/ca.key" ]; then
+    echo "❌ Missing 'certs/' directory from host!"
+    echo "SwarmSec uses mutual TLS (mTLS). Both machines must share the same Certificate Authority."
+    echo ""
+    echo "Please copy the 'certs/' folder from the host ($HOST_IP) to this machine:"
+    echo "  scp -r <user>@$HOST_IP:/path/to/SwarmSec/certs ./certs"
+    echo ""
+    exit 1
 fi
 
-# Ensure local node certificate exists signed for this machine
+# Detect local routable IP address for peer announcement
+LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7}')
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP="127.0.0.1"
+fi
+echo "Local IP detected: $LOCAL_IP"
+
+# Ensure certificates for this machine exist under the shared CA
 python scripts/generate_certs.py
 
 echo "[4/4] Starting Peer Node connected to Host ($HOST_IP)..."
 export REGISTRAR_URL="https://$HOST_IP:8000"
 export EXTRA_PEERS="https://$HOST_IP:8001,https://$HOST_IP:8002,https://$HOST_IP:8003"
 export NODE_PORT="8001"
+export NODE_NUM="2"
+export ANNOUNCE_URL="https://$LOCAL_IP:8001"
 
 echo "Starting local node peering with $HOST_IP..."
 python scripts/run_servers.py &
 BACKEND_PID=$!
 
-sleep 2
+sleep 3
+
+# Announce to host node 1 so host gossips back to us
+python -c "
+import httpx
+try:
+    with httpx.Client(verify=False, timeout=5.0) as client:
+        client.post('https://$HOST_IP:8001/peers/register', json={'peer_url': 'https://$LOCAL_IP:8001'})
+        print('✅ Announced peer to Host ($HOST_IP:8001)')
+except Exception as e:
+    print(f'Peer registration note: {e}')
+"
 
 echo "Starting React Dashboard..."
 cd dashboard

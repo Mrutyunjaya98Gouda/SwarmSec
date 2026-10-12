@@ -44,7 +44,7 @@ def run():
     extra_peers = [p.strip() for p in os.environ.get("EXTRA_PEERS", "").split(",") if p.strip()]
 
     for i, port in enumerate(ports):
-        node_num = i + 1
+        node_num = int(os.environ.get("NODE_NUM", i + 1))
         peer_ports = [p for p in ports if p != port]
         local_peers = [f"https://localhost:{p}" for p in peer_ports]
         all_peers = local_peers + extra_peers
