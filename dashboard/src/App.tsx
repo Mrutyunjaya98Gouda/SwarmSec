@@ -60,7 +60,7 @@ interface FeedResponse {
   advisory_disclaimer: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "https://localhost:8001";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export default function App() {
   const [data, setData] = useState<FeedResponse | null>(null);
@@ -114,7 +114,11 @@ export default function App() {
     let ws: WebSocket;
     
     const connectWs = () => {
-      const wsUrl = API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/feed/stream";
+      const loc = window.location;
+      const wsProtocol = loc.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = API_URL.startsWith("http")
+        ? API_URL.replace("http://", "ws://").replace("https://", "wss://") + "/feed/stream"
+        : `${wsProtocol}//${loc.host}${API_URL}/feed/stream`;
       ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
