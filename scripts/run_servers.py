@@ -16,31 +16,43 @@ def run():
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     
-    # 1. Start Registrar
-    registrar_cmd = [
-        "uvicorn", "swarmsec.registrar.app:app", 
-        "--host", "0.0.0.0",
-        "--port", "8000", 
-        "--ssl-keyfile", "certs/registrar.key", 
-        "--ssl-certfile", "certs/registrar.pem"
-    ]
-    registrar = subprocess.Popen(registrar_cmd, env=env)
+    # 1. Start Registrar (optional: can be disabled if pointing to a remote registrar)
+    registrar = None
+    remote_registrar = os.environ.get("REGISTRAR_URL")
     
-    # Wait for registrar to start
-    time.sleep(2)
-    
+    if not remote_registrar:
+        registrar_cmd = [
+            "uvicorn", "swarmsec.registrar.app:app", 
+            "--host", "0.0.0.0",
+            "--port", "8000", 
+            "--ssl-keyfile", "certs/registrar.key", 
+            "--ssl-certfile", "certs/registrar.pem"
+        ]
+        registrar = subprocess.Popen(registrar_cmd, env=env)
+        # Wait for registrar to start
+        time.sleep(2)
+        effective_registrar_url = "https://localhost:8000"
+    else:
+        print(f"Using remote Registrar at: {remote_registrar}")
+        effective_registrar_url = remote_registrar
+
     # 2. Start Nodes
     nodes = []
-    ports = [8001, 8002, 8003]
-    
+    # If run as peer worker node on friend machine, NODE_PORT can be customized
+    custom_port = os.environ.get("NODE_PORT")
+    ports = [int(custom_port)] if custom_port else [8001, 8002, 8003]
+    extra_peers = [p.strip() for p in os.environ.get("EXTRA_PEERS", "").split(",") if p.strip()]
+
     for i, port in enumerate(ports):
         node_num = i + 1
         peer_ports = [p for p in ports if p != port]
-        peers_str = ",".join([f"https://localhost:{p}" for p in peer_ports])
+        local_peers = [f"https://localhost:{p}" for p in peer_ports]
+        all_peers = local_peers + extra_peers
+        peers_str = ",".join(all_peers)
         
         node_env = env.copy()
         node_env.update({
-            "REGISTRAR_URL": "https://localhost:8000",
+            "REGISTRAR_URL": effective_registrar_url,
             "PEERS": peers_str,
             "TLS_CA_PATH": "certs/ca.pem",
             "TLS_CERT_PATH": f"certs/node{node_num}.pem",
@@ -73,7 +85,8 @@ def run():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nShutting down servers...")
-        registrar.terminate()
+        if registrar:
+            registrar.terminate()
         for n in nodes:
             n.terminate()
         print("Shutdown complete.")

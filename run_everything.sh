@@ -27,9 +27,14 @@ if [ ! -d "node_modules" ]; then
 fi
 cd ..
 
-echo "[3/4] Generating Cryptographic Certificates (mTLS & Identity)..."
+echo "[3/4] Ensuring Cryptographic Certificates (mTLS & Identity)..."
 mkdir -p certs
-python scripts/generate_certs.py
+if [ ! -f "certs/ca.pem" ] || [ ! -f "certs/registrar.pem" ]; then
+    echo "Generating new local certificates..."
+    python scripts/generate_certs.py
+else
+    echo "Existing certificates found in certs/ directory. Keeping current trust anchor."
+fi
 
 echo "[4/4] Starting SwarmSec Network..."
 # 1. Start Backend Network (Registrar + 3 Nodes)

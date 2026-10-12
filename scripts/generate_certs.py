@@ -48,6 +48,23 @@ def generate_certs():
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, entity)])
         
+        sans = [
+            x509.DNSName(entity),
+            x509.DNSName("localhost"),
+            x509.IPAddress(__import__("ipaddress").ip_address("127.0.0.1")),
+            x509.IPAddress(__import__("ipaddress").ip_address("0.0.0.0")),
+        ]
+        # Dynamically add all local host IPv4 addresses so peers can reach across LAN
+        try:
+            import socket
+            hostname = socket.gethostname()
+            sans.append(x509.DNSName(hostname))
+            local_ips = socket.gethostbyname_ex(hostname)[2]
+            for ip_str in local_ips:
+                sans.append(x509.IPAddress(__import__("ipaddress").ip_address(ip_str)))
+        except Exception:
+            pass
+
         cert = x509.CertificateBuilder().subject_name(
             subject
         ).issuer_name(
@@ -61,11 +78,7 @@ def generate_certs():
         ).not_valid_after(
             datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
         ).add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName(entity),
-                x509.DNSName("localhost"),
-                x509.IPAddress(__import__("ipaddress").ip_address("127.0.0.1")),
-            ]),
+            x509.SubjectAlternativeName(sans),
             critical=False,
         ).add_extension(
             x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
