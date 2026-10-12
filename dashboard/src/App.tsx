@@ -153,6 +153,18 @@ export default function App() {
     };
   }, []);
 
+  // HTTP polling fallback: keep the feed live whenever the WebSocket is
+  // disconnected (TLS cert rejection, network hiccup, server restart, etc.)
+  useEffect(() => {
+    if (wsConnected) return; // WS is healthy — no polling needed
+
+    const pollInterval = setInterval(() => {
+      fetchFeed();
+    }, 15_000); // 15 s — frequent enough to feel live, cheap on the server
+
+    return () => clearInterval(pollInterval);
+  }, [wsConnected]);
+
   // Compute active nodes dynamically from sources
   const activeNodes = useMemo(() => {
     if (!data) return [];

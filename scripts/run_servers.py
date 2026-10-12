@@ -4,10 +4,10 @@ SwarmSec Local Server Runner
 Starts the Registrar and 3 Nodes locally without needing Docker.
 """
 
-import subprocess
 import os
+import subprocess
 import time
-import sys
+
 
 def run():
     print("Starting SwarmSec network locally...")
@@ -44,7 +44,10 @@ def run():
             "PEERS": peers_str,
             "TLS_CA_PATH": "certs/ca.pem",
             "TLS_CERT_PATH": f"certs/node{node_num}.pem",
-            "TLS_KEY_PATH": f"certs/node{node_num}.key"
+            "TLS_KEY_PATH": f"certs/node{node_num}.key",
+            # Isolate per-node SQLite files to avoid DB collision (see rate_limit.py / app.py)
+            "SWARMSEC_NODE_STATE_DB": f".swarmsec_node{node_num}_state.db",
+            "SWARMSEC_REPLAY_DB": f".swarmsec_replay_node{node_num}.db",
         })
         
         node_cmd = [

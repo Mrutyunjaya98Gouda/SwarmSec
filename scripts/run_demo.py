@@ -10,13 +10,11 @@ Run this while watching the Dashboard!
 """
 
 import asyncio
-import httpx
-import json
 import base64
-import os
-import ssl
-from pathlib import Path
 import logging
+from pathlib import Path
+
+import httpx
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -45,7 +43,11 @@ async def main():
         # Import key tools
         import sys
         sys.path.append(str(Path(__file__).parent.parent / "src"))
-        from swarmsec.crypto.keys import generate_keypair, serialize_public_key, serialize_private_key
+        from swarmsec.crypto.keys import (
+            generate_keypair,
+            serialize_private_key,
+            serialize_public_key,
+        )
         
         orgs = []
         org_ids = ["org-a", "org-b", "org-c", "org-d", "colluder-1"]
@@ -73,7 +75,7 @@ async def main():
         await asyncio.sleep(2)
         
         logger.info("\n[SCENARIO 1: Legitimate Threat Report]")
-        logger.info(f"Org 1 reports a verified malicious IP: 203.0.113.42")
+        logger.info("Org 1 reports a verified malicious IP: 203.0.113.42")
         resp = await client.post(
             f"{NODE1_URL}/publish", 
             json={

@@ -405,3 +405,28 @@ class TestFalsePositiveLegitimate:
         # exclusive mutual endorsement the same as collusion.
         assert weight_ab < 1.0, "Exclusive mutual endorsers should be down-weighted"
         assert weight_ba < 1.0, "Exclusive mutual endorsers should be down-weighted"
+
+    def test_legitimate_recent_feedback_not_flagged_as_downweighted(self):
+        """
+        Regression: Any feedback arriving within 7 days used to be flagged with
+        'feedback_downweighted' because time_decay (<1.0) was multiplied into weight
+        before the flag check.
+        
+        Now, only graph-based collusion penalties trigger 'feedback_downweighted'.
+        A first-time feedback submitted 10 minutes after an indicator should NOT have
+        the 'feedback_downweighted' flag.
+        """
+        ind = _make_indicator("org_alice", "[ipv4-addr:value = '198.51.100.1']", minutes_offset=0)
+        # Bob provides positive feedback 10 minutes later
+        op_bob = _make_opinion("org_bob", [ind.payload.id], opinion="agree", minutes_offset=10)
+
+        all_msgs = {
+            ind.envelope.message_id: ind,
+            op_bob.envelope.message_id: op_bob,
+        }
+
+        result = compute_corroboration_score([ind], feedbacks=[op_bob], all_messages=all_msgs)
+
+        assert "feedback_downweighted" not in result["flags"], (
+            f"Legitimate prompt feedback should not trigger 'feedback_downweighted'. Got flags: {result['flags']}"
+        )

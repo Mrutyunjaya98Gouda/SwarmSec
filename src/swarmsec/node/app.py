@@ -28,6 +28,7 @@ _REVOKED_CREDENTIALS = set()
 _SEQ_NUMS = {}  # credential_id -> int (highest sequence number seen)
 import collections
 
+
 class LRUSet:
     """A fast, time-windowed bounded set for O(1) deduplication without memory leaks."""
     def __init__(self, capacity: int = 100_000):
@@ -50,18 +51,28 @@ _VERIFIER = None
 
 import sqlite3
 
+
+def _node_state_db() -> str:
+    """Return the configured path for this node's SQLite state database.
+
+    Each node running locally must use its own file to avoid collisions.
+    Set SWARMSEC_NODE_STATE_DB in the environment (e.g. swarmsec_node1.db).
+    """
+    return os.environ.get("SWARMSEC_NODE_STATE_DB", "swarmsec_node_state.db")
+
+
 def init_db():
-    conn = sqlite3.connect("swarmsec_node_state.db")
+    conn = sqlite3.connect(_node_state_db())
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS seq_nums (credential_id TEXT PRIMARY KEY, seq INT)")
     c.execute("CREATE TABLE IF NOT EXISTS seen_messages (message_id TEXT PRIMARY KEY, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     # Create an index to make TTL deletion fast
     c.execute("CREATE INDEX IF NOT EXISTS idx_seen_ts ON seen_messages (timestamp)")
     conn.commit()
-    
+
     for row in c.execute("SELECT credential_id, seq FROM seq_nums"):
         _SEQ_NUMS[row[0]] = row[1]
-        
+
     # Load only recent messages into the LRU cache (descending, then reverse to keep LRU order)
     rows = c.execute("SELECT message_id FROM seen_messages ORDER BY timestamp DESC LIMIT 100000").fetchall()
     for row in reversed(rows):
@@ -69,13 +80,13 @@ def init_db():
     conn.close()
 
 def persist_seq_num(cred_id, seq):
-    conn = sqlite3.connect("swarmsec_node_state.db")
+    conn = sqlite3.connect(_node_state_db())
     conn.execute("INSERT OR REPLACE INTO seq_nums (credential_id, seq) VALUES (?, ?)", (cred_id, seq))
     conn.commit()
     conn.close()
 
 def persist_seen_message(msg_id):
-    conn = sqlite3.connect("swarmsec_node_state.db")
+    conn = sqlite3.connect(_node_state_db())
     conn.execute("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)", (msg_id,))
     # Probabilistic TTL cleanup (approx 1% of the time) to prevent unbounded DB growth (7 days)
     import random
@@ -130,14 +141,12 @@ class PublishFeedbackRequest(BaseModel):
 
 async def _gossip_to_peers(message: SwarmSecMessage):
     """Relay a message to all known peers."""
-    import os
     cert_path = os.environ.get("TLS_CERT_PATH")
     key_path = os.environ.get("TLS_KEY_PATH")
-    ca_path = os.environ.get("TLS_CA_PATH")
-    
+
     # Bypass strict CA verification for local self-signed certificates
     # (Python 3.10+ rejects self-signed CAs missing the Authority Key Identifier extension)
-    verify = False 
+    verify = False
     cert = (cert_path, key_path) if cert_path and key_path else None
 
     async with httpx.AsyncClient(verify=verify, cert=cert) as client:
@@ -206,7 +215,10 @@ async def receive_revocation(update_data: dict):
         
     from swarmsec.registrar.credential import verify_status_update
     if not _VERIFIER or not _VERIFIER.registrar_pubkeys:
-        raise HTTPException(status_code=500, detail="Node missing registrar pubkeys")
+        if _VERIFIER:
+            _VERIFIER._fetch_registrar_pubkeys()
+        if not _VERIFIER or not _VERIFIER.registrar_pubkeys:
+            raise HTTPException(status_code=500, detail="Node missing registrar pubkeys")
         
     if not verify_status_update(update, _VERIFIER.registrar_pubkeys):
         logger.warning(f"Rejected invalid revocation update for {update.credential_id}")
@@ -219,15 +231,11 @@ async def receive_revocation(update_data: dict):
 
     
     # Gossip to peers
-    import os
     cert_path = os.environ.get("TLS_CERT_PATH")
     key_path = os.environ.get("TLS_KEY_PATH")
-    ca_path = os.environ.get("TLS_CA_PATH")
-    
-    verify = False
     cert = (cert_path, key_path) if cert_path and key_path else None
 
-    async with httpx.AsyncClient(verify=verify, cert=cert) as client:
+    async with httpx.AsyncClient(verify=False, cert=cert) as client:
         for peer in _PEERS:
             try:
                 await client.post(f"{peer}/gossip/revocation", json=update_data, timeout=2.0)
@@ -244,15 +252,20 @@ class UIRegisterRequest(BaseModel):
 async def ui_register(req: UIRegisterRequest):
     """Helper endpoint for the UI to register and get a keypair."""
     import base64
+
     import httpx
-    from swarmsec.crypto.keys import generate_keypair, serialize_public_key, serialize_private_key
+
+    from swarmsec.crypto.keys import (
+        generate_keypair,
+        serialize_private_key,
+        serialize_public_key,
+    )
     
     priv, pub = generate_keypair()
     pub_b64 = base64.b64encode(serialize_public_key(pub)).decode("ascii")
     priv_b64 = base64.b64encode(serialize_private_key(priv)).decode("ascii")
     
     registrar_url = os.environ.get("REGISTRAR_URL", "https://localhost:8000")
-    ca_path = os.environ.get("TLS_CA_PATH")
     
     async with httpx.AsyncClient(verify=False) as client:
         resp = await client.post(
@@ -570,7 +583,18 @@ async def _check_and_fire_webhooks(pattern: str):
                 async with httpx.AsyncClient() as client:
                     for url in _WEBHOOKS:
                         try:
-                            await client.post(url, json={"alert": "HIGH_TRUST_INDICATOR", "data": ind}, timeout=5.0)
+                            await client.post(
+                                url, 
+                                json={
+                                    "alert": "HIGH_TRUST_INDICATOR", 
+                                    "data": ind,
+                                    "advisory_disclaimer": (
+                                        "ADVISORY ONLY: SwarmSec computes local corroboration scores and trust rankings. "
+                                        "This output is NOT an automated block/allow decision; a human analyst must review context and make the operational mitigation call."
+                                    ),
+                                }, 
+                                timeout=5.0
+                            )
                         except Exception as e:
                             logger.error(f"Failed to post webhook to {url}: {e}")
             break

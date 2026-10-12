@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     global _REGISTRAR_PRIVATE_KEYS, _REGISTRAR_PUBLIC_KEYS, _TRANSPARENCY_LOG
     
-    from swarmsec.crypto.keys import load_private_key, save_keypair, generate_keypair
+    from swarmsec.crypto.keys import load_private_key, save_keypair
     
     for i in range(1, 4):
         key_file = os.environ.get(f"SWARMSEC_REGISTRAR_KEY_FILE_{i}", f"registrar_{i}.key")
@@ -99,10 +99,12 @@ def register(request: RegistrationRequest):
         raise HTTPException(status_code=403, detail="Organization not in allowlist.")
 
     try:
-        # Validate that the provided key is valid base64
-        base64.b64decode(request.pseudonym_public_key)
+        # Validate that the provided key is valid base64 and exactly 32 bytes (raw Ed25519)
+        pub_bytes = base64.b64decode(request.pseudonym_public_key, validate=True)
+        if len(pub_bytes) != 32:
+            raise ValueError("Pseudonym public key must be exactly 32 bytes.")
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64 pseudonym key.")
+        raise HTTPException(status_code=400, detail="Invalid Ed25519 pseudonym public key (must be valid base64 of 32 bytes).")
 
     # Issue credential (registrar signs it with 2 keys to satisfy threshold)
     # Using keys 0 and 1 for the 2-of-3 threshold

@@ -1,7 +1,9 @@
 """Trust scoring and corroboration logic for SwarmSec."""
 
-from swarmsec.node.models import SwarmSecMessage
 import urllib.parse
+
+from swarmsec.node.models import SwarmSecMessage
+
 
 def get_pattern_entropy_weight(pattern: str) -> float:
     """
@@ -16,6 +18,8 @@ def get_pattern_entropy_weight(pattern: str) -> float:
     # 1. Base Entity Entropy
     if "file:hashes" in pattern_lower or "sha-256" in pattern_lower or "md5" in pattern_lower:
         base_weight = 1.0
+    elif len(pattern.strip()) == 64 and all(c in "0123456789abcdefABCDEF" for c in pattern.strip()):
+        base_weight = 1.0  # Raw SHA-256 hash string
     elif "windows-registry-key" in pattern_lower or "mutex:name" in pattern_lower:
         base_weight = 1.2
     elif "url:value" in pattern_lower:
@@ -106,7 +110,7 @@ def compute_corroboration_score(
         is_independent = True
         has_references = False
         
-        for ref in msg.payload.external_references:
+        for ref in getattr(msg.payload, "external_references", []):
             if ref.url:
                 has_references = True
                 domain = urllib.parse.urlparse(ref.url).netloc
@@ -188,12 +192,18 @@ def compute_corroboration_score(
             if giver_id == target_cred_id or giver_id in seen_credentials:
                 continue
                 
-            weight = get_feedback_weight(giver_id, target_cred_id, graph, totals)
-            
+            # Graph-based collusion penalty (repeat, mutual, cluster density).
+            # This is the ONLY signal that raises "feedback_downweighted".
+            # Time-decay and burst-velocity penalties are informational multipliers
+            # — they should NOT be confused with the collusion detection flag.
+            graph_weight = get_feedback_weight(giver_id, target_cred_id, graph, totals)
+            if graph_weight < 1.0:
+                flags.add("feedback_downweighted")
+
             try:
                 indicator_dt = datetime.fromisoformat(sorted_messages[0].envelope.timestamp.replace('Z', '+00:00'))
                 feedback_dt = datetime.fromisoformat(fb.envelope.timestamp.replace('Z', '+00:00'))
-                
+
                 # 1. Vesting: Time since indicator published
                 delta_since_publish = (feedback_dt - indicator_dt).total_seconds()
                 time_decay = 0.5
@@ -202,25 +212,22 @@ def compute_corroboration_score(
                 elif delta_since_publish > 300:
                     fraction = (delta_since_publish - 300) / (7 * 86400 - 300)
                     time_decay = 0.5 + (0.5 * fraction)
-                    
+
                 # 2. Velocity: Time since previous feedback (burst penalty)
                 burst_penalty = 1.0
                 if prev_feedback_dt:
                     delta_since_prev = (feedback_dt - prev_feedback_dt).total_seconds()
-                    if delta_since_prev < 3600:  # within 1 hour of another feedback
+                    if 0 <= delta_since_prev < 3600:  # within 1 hour of another feedback
                         burst_penalty = 0.7  # 30% penalty for clustering tightly in time
                         flags.add("velocity_burst_penalty")
-                        
+
                 prev_feedback_dt = feedback_dt
-                
+
             except Exception:
                 time_decay = 0.5  # fallback if parsing fails
                 burst_penalty = 1.0
-                
-            weight = weight * time_decay * burst_penalty
-            
-            if weight < 1.0:
-                flags.add("feedback_downweighted")
+
+            weight = graph_weight * time_decay * burst_penalty
                 
             if weight > 0 and sentiment != 0.0:
                 seen_credentials.add(giver_id)

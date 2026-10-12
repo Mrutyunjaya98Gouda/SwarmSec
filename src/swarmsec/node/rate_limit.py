@@ -1,5 +1,6 @@
 """Rate limiting for SwarmSec gossip."""
 
+import os
 import sqlite3
 import time
 from collections import defaultdict
@@ -9,9 +10,19 @@ from pathlib import Path
 EPOCH_DURATION_SECONDS = 60
 MAX_MESSAGES_PER_EPOCH = 5
 
-# SQLite persistence for replay prevention (TTL 7 days)
+# SQLite persistence for replay prevention (TTL 7 days).
+# Path is configurable so multiple nodes running locally don't share a file
+# and falsely reject each other's gossiped messages as replays.
 MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60
-DB_PATH = Path(".swarmsec_replay.db")
+
+
+def _replay_db_path() -> Path:
+    """Return the replay-prevention DB path for this node instance.
+
+    Set SWARMSEC_REPLAY_DB in the environment to isolate nodes sharing a cwd
+    (e.g. SWARMSEC_REPLAY_DB=.replay_node1.db).
+    """
+    return Path(os.environ.get("SWARMSEC_REPLAY_DB", ".swarmsec_replay.db"))
 
 
 class RateLimiter:
@@ -23,7 +34,7 @@ class RateLimiter:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(_replay_db_path()) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -42,7 +53,7 @@ class RateLimiter:
         """Return True if this message_id has already been processed."""
         if not message_id:
             return False
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(_replay_db_path()) as conn:
             cursor = conn.execute("SELECT 1 FROM seen_messages WHERE message_id = ?", (message_id,))
             return cursor.fetchone() is not None
 
@@ -76,7 +87,7 @@ class RateLimiter:
         # Record the message_id to prevent future replays
         if message_id:
             current_time = int(time.time())
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(_replay_db_path()) as conn:
                 try:
                     conn.execute(
                         "INSERT INTO seen_messages (message_id, timestamp_recorded) VALUES (?, ?)",

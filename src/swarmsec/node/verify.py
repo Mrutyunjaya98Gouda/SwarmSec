@@ -1,7 +1,6 @@
 """Peer-side verification of gossip messages."""
 
 import base64
-import json
 import logging
 
 import httpx
@@ -9,7 +8,7 @@ import httpx
 from swarmsec.crypto.keys import deserialize_public_key, verify
 from swarmsec.node.models import SwarmSecMessage
 from swarmsec.node.rate_limit import RateLimiter
-from swarmsec.registrar.credential import verify_credential
+from swarmsec.registrar.credential import is_credential_expired, verify_credential
 from swarmsec.registrar.models import Credential
 
 logger = logging.getLogger(__name__)
@@ -27,8 +26,7 @@ class MessageVerifier:
         import os
         cert_path = os.environ.get("TLS_CERT_PATH")
         key_path = os.environ.get("TLS_KEY_PATH")
-        ca_path = os.environ.get("TLS_CA_PATH")
-        verify_ca = ca_path if ca_path else False
+        verify_ca = False
         cert = (cert_path, key_path) if cert_path and key_path else None
         
         try:
@@ -59,8 +57,7 @@ class MessageVerifier:
             import os
             cert_path = os.environ.get("TLS_CERT_PATH")
             key_path = os.environ.get("TLS_KEY_PATH")
-            ca_path = os.environ.get("TLS_CA_PATH")
-            verify_ca = ca_path if ca_path else False
+            verify_ca = False
             cert = (cert_path, key_path) if cert_path and key_path else None
 
             async with httpx.AsyncClient(verify=verify_ca, cert=cert) as client:
@@ -105,7 +102,13 @@ class MessageVerifier:
             return False, "Unknown credential ID"
 
         # 3. Verify the registrar's Ed25519 signatures on the credential itself
-        if self.registrar_pubkeys and cred_info.get("credential"):
+        if not self.registrar_pubkeys:
+            self._fetch_registrar_pubkeys()
+
+        if not self.registrar_pubkeys:
+            return False, "Registrar public keys unavailable"
+
+        if cred_info.get("credential"):
             try:
                 cred = Credential(**cred_info["credential"])
                 if not verify_credential(cred, self.registrar_pubkeys):
@@ -125,9 +128,17 @@ class MessageVerifier:
         except Exception as e:
             return False, f"Signature verification error: {e}"
 
-        # 5. Verify credential status
+        # 5. Verify credential status (revoked or expired)
         if cred_info.get("status") == "revoked":
             return False, "Credential revoked"
+
+        if cred_info.get("credential"):
+            try:
+                cred_obj = Credential(**cred_info["credential"])
+                if is_credential_expired(cred_obj):
+                    return False, "Credential expired"
+            except Exception:
+                pass  # If we can't parse the credential object, defer to status check
 
         # 6. Verify rate ticket (also prevents replay via message_id tracking)
         if not self.rate_limiter.check_and_consume(

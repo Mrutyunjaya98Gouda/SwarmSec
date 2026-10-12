@@ -260,3 +260,48 @@ async def test_feedback_before_target_indicator_handled_gracefully(mock_verifier
     assert is_valid is True, (
         f"Feedback before target indicator should not be rejected at gossip layer, got: {reason}"
     )
+
+
+@pytest.mark.anyio
+async def test_reject_expired_credential(mock_keys, registrar_keys, valid_message):
+    """Messages from nodes with an expired credential must be rejected at the gossip layer.
+
+    Regression: verify.py previously checked status == 'revoked' but never called
+    is_credential_expired(), so an expired but still-active credential was accepted.
+    """
+    from swarmsec.crypto.canonicalize import canonicalize as _canon
+    from swarmsec.crypto.keys import sign as _sign
+    from swarmsec.registrar.credential import issue_credential as _issue
+
+    _, b64_pub = mock_keys
+    reg_privs, reg_pubs = registrar_keys
+
+    # Issue a credential backdated to expire in the past (validity_days=-1)
+    expired_cred = _issue(b64_pub, reg_privs[0], validity_days=-1)
+    expired_cred.credential_id = "test-cred-123"
+
+    # Re-sign with both keys so 2-of-3 threshold passes after setting credential_id
+    canonical = _canon(expired_cred.signable_fields())
+    sig1 = _sign(reg_privs[0], canonical)
+    sig2 = _sign(reg_privs[1], canonical)
+    expired_cred.registrar_signatures = [
+        base64.b64encode(sig1).decode("ascii"),
+        base64.b64encode(sig2).decode("ascii"),
+    ]
+
+    cred_dict = expired_cred.model_dump(mode="json")
+
+    with patch.object(MessageVerifier, '_fetch_registrar_pubkeys'):
+        verifier = MessageVerifier("http://mock-registrar")
+
+    verifier.registrar_pubkeys = reg_pubs
+    verifier._get_credential_from_log = AsyncMock(return_value={
+        "public_key": b64_pub,
+        "status": "active",  # Status is still "active" — only expiry time has passed
+        "registrar_signatures": expired_cred.registrar_signatures,
+        "credential": cred_dict,
+    })
+
+    is_valid, reason = await verifier.verify(valid_message)
+    assert is_valid is False, "Expired credential should be rejected"
+    assert "expired" in reason.lower(), f"Expected 'expired' in rejection reason, got: {reason}"

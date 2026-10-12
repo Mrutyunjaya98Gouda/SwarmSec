@@ -125,3 +125,65 @@ class TestCredentialExpiry:
 
         cred = issue_credential(pseudo_b64, reg_priv, validity_days=-1) # Issued yesterday
         assert is_credential_expired(cred)
+
+
+class TestThresholdBypassRegression:
+    """A credential carrying the same signature blob twice must NOT satisfy 2-of-3.
+
+    Regression for the threshold bypass identified in the security audit: the old
+    code iterated registrar_public_keys for each submitted signature without tracking
+    which key indices had already matched, so a single duplicated signature could
+    satisfy the threshold.
+    """
+
+    def _make_dual_sig_cred(self):
+        """Return (cred, reg_pubs) where cred has exactly one unique signature duplicated."""
+        reg_keys = [generate_keypair() for _ in range(3)]
+        reg_privs, reg_pubs = [k[0] for k in reg_keys], [k[1] for k in reg_keys]
+        _, pseudo_pub = generate_keypair()
+        pseudo_b64 = base64.b64encode(serialize_public_key(pseudo_pub)).decode("ascii")
+
+        cred = issue_credential(pseudo_b64, reg_privs[0])  # one real sig from key-0
+        # Duplicate key-0's signature — this is the bypass attempt
+        cred.registrar_signatures = [
+            cred.registrar_signatures[0],
+            cred.registrar_signatures[0],  # same blob repeated
+        ]
+        return cred, reg_pubs
+
+    def test_duplicated_signature_cannot_satisfy_threshold(self):
+        cred, reg_pubs = self._make_dual_sig_cred()
+        assert not verify_credential(cred, reg_pubs), (
+            "A duplicated signature must NOT count as two distinct registrar approvals"
+        )
+
+    def test_two_distinct_signatures_still_pass(self):
+        """Sanity check: a properly signed credential still verifies."""
+        reg_keys = [generate_keypair() for _ in range(3)]
+        reg_privs, reg_pubs = [k[0] for k in reg_keys], [k[1] for k in reg_keys]
+        _, pseudo_pub = generate_keypair()
+        pseudo_b64 = base64.b64encode(serialize_public_key(pseudo_pub)).decode("ascii")
+
+        from swarmsec.crypto.canonicalize import canonicalize
+        from swarmsec.crypto.keys import sign
+
+        cred = issue_credential(pseudo_b64, reg_privs[0])
+        sig2 = sign(reg_privs[1], canonicalize(cred.signable_fields()))
+        cred.registrar_signatures.append(base64.b64encode(sig2).decode("ascii"))
+
+        assert verify_credential(cred, reg_pubs)
+
+    def test_status_update_duplicated_signature_cannot_satisfy_threshold(self):
+        """Same bypass defence applies to verify_status_update."""
+        reg_keys = [generate_keypair() for _ in range(3)]
+        reg_privs, reg_pubs = [k[0] for k in reg_keys], [k[1] for k in reg_keys]
+
+        update = update_status("bypass-cred", "revoked", reg_privs[0])
+        # Duplicate the only real signature
+        update.registrar_signatures = [
+            update.registrar_signatures[0],
+            update.registrar_signatures[0],
+        ]
+        assert not verify_status_update(update, reg_pubs), (
+            "A duplicated signature on a status update must NOT satisfy 2-of-3"
+        )

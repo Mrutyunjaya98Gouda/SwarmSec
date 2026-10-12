@@ -1,10 +1,11 @@
 import datetime
 import os
+
 from cryptography import x509
-from cryptography.x509.oid import NameOID
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
+
 
 def generate_certs():
     os.makedirs("certs", exist_ok=True)
@@ -21,11 +22,15 @@ def generate_certs():
     ).serial_number(
         x509.random_serial_number()
     ).not_valid_before(
-        datetime.datetime.utcnow()
+        datetime.datetime.now(datetime.UTC)
     ).not_valid_after(
-        datetime.datetime.utcnow() + datetime.timedelta(days=365)
+        datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
     ).add_extension(
         x509.BasicConstraints(ca=True, path_length=None), critical=True
+    ).add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), critical=False
+    ).add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
     ).sign(ca_key, hashes.SHA256())
 
     with open("certs/ca.key", "wb") as f:
@@ -52,12 +57,18 @@ def generate_certs():
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.datetime.utcnow()
+            datetime.datetime.now(datetime.UTC)
         ).not_valid_after(
-            datetime.datetime.utcnow() + datetime.timedelta(days=365)
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
         ).add_extension(
-            x509.SubjectAlternativeName([x509.DNSName(entity), x509.DNSName("localhost"), x509.DNSName("127.0.0.1")]),
-            critical=False
+            x509.SubjectAlternativeName([
+                x509.DNSName(entity),
+                x509.DNSName("localhost"),
+                x509.IPAddress(__import__("ipaddress").ip_address("127.0.0.1")),
+            ]),
+            critical=False,
+        ).add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
         ).sign(ca_key, hashes.SHA256())
 
         with open(f"certs/{entity}.key", "wb") as f:

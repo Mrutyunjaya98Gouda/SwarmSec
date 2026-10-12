@@ -11,7 +11,10 @@ signs with ordinary Ed25519. No blind signatures.
 from __future__ import annotations
 
 import base64
+import logging
 from datetime import UTC, datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -84,18 +87,20 @@ def verify_credential(
 
     canonical_bytes = canonicalize(credential.signable_fields())
     
-    valid_sigs = 0
+    # Track which key indices have already contributed to avoid counting the
+    # same key twice — a duplicated signature must NOT satisfy the threshold.
+    matched_key_indices: set[int] = set()
     for sig_b64 in credential.registrar_signatures:
         try:
             signature = base64.b64decode(sig_b64)
-            for pub in registrar_public_keys:
-                if verify(pub, canonical_bytes, signature):
-                    valid_sigs += 1
+            for idx, pub in enumerate(registrar_public_keys):
+                if idx not in matched_key_indices and verify(pub, canonical_bytes, signature):
+                    matched_key_indices.add(idx)
                     break
         except Exception:
-            pass
-            
-    return valid_sigs >= 2
+            logger.debug("Skipping malformed registrar signature during credential verification")
+
+    return len(matched_key_indices) >= 2
 
 
 def update_status(
@@ -147,18 +152,20 @@ def verify_status_update(
 
     canonical_bytes = canonicalize(update.signable_fields())
     
-    valid_sigs = 0
+    # Track which key indices have already contributed to avoid counting the
+    # same key twice — a duplicated signature must NOT satisfy the threshold.
+    matched_key_indices: set[int] = set()
     for sig_b64 in update.registrar_signatures:
         try:
             signature = base64.b64decode(sig_b64)
-            for pub in registrar_public_keys:
-                if verify(pub, canonical_bytes, signature):
-                    valid_sigs += 1
+            for idx, pub in enumerate(registrar_public_keys):
+                if idx not in matched_key_indices and verify(pub, canonical_bytes, signature):
+                    matched_key_indices.add(idx)
                     break
         except Exception:
-            pass
-            
-    return valid_sigs >= 2
+            logger.debug("Skipping malformed registrar signature during status update verification")
+
+    return len(matched_key_indices) >= 2
 
 
 def is_credential_expired(credential: Credential) -> bool:
